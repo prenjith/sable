@@ -184,3 +184,150 @@ class Lexer:
         self.error(start, f"unexpected character {c!r}")
 
 
+@dataclass
+class Program:
+    statements: List[Any]
+
+
+@dataclass
+class Let:
+    line: int
+    name: str
+    value: Any
+
+
+@dataclass
+class FnDecl:
+    line: int
+    name: str
+    params: List[str]
+    body: Any
+
+
+@dataclass
+class If:
+    line: int
+    cond: Any
+    then_branch: Any
+    else_branch: Any
+
+
+@dataclass
+class While:
+    line: int
+    cond: Any
+    body: Any
+
+
+@dataclass
+class For:
+    line: int
+    var: str
+    iterable: Any
+    body: Any
+
+
+@dataclass
+class Return:
+    line: int
+    value: Any
+
+
+@dataclass
+class Break:
+    line: int
+
+
+@dataclass
+class Continue:
+    line: int
+
+
+@dataclass
+class Block:
+    line: int
+    statements: List[Any]
+
+
+@dataclass
+class ExprStmt:
+    line: int
+    expr: Any
+
+
+@dataclass
+class Assign:
+    line: int
+    target: Any
+    op: str
+    value: Any
+
+
+@dataclass
+class Logical:
+    line: int
+    op: str
+    left: Any
+    right: Any
+
+
+@dataclass
+class Binary:
+    line: int
+    op: str
+    left: Any
+    right: Any
+
+
+@dataclass
+class Unary:
+    line: int
+    op: str
+    operand: Any
+
+
+@dataclass
+class Call:
+    line: int
+    callee: Any
+    args: List[Any]
+
+
+@dataclass
+class Index:
+    line: int
+    obj: Any
+    index: Any
+
+
+@dataclass
+class Var:
+    line: int
+    name: str
+
+
+@dataclass
+class Literal:
+    line: int
+    value: Any
+
+
+@dataclass
+class ListLit:
+    line: int
+    elements: List[Any]
+
+
+@dataclass
+class MapLit:
+    line: int
+    pairs: List[Any]
+
+
+@dataclass
+class FnExpr:
+    line: int
+    params: List[str]
+    body: Any
+
+
