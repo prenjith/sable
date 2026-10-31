@@ -331,3 +331,285 @@ class FnExpr:
     body: Any
 
 
+class Parser:
+    def __init__(self, tokens, source):
+        self.tokens = tokens
+        self.source = source
+        self.pos = 0
+
+    def current(self):
+        return self.tokens[self.pos]
+
+    def peek(self, n=1):
+        index = min(self.pos + n, len(self.tokens) - 1)
+        return self.tokens[index]
+
+    def check(self, type):
+        return self.current().type == type
+
+    def advance(self):
+        tok = self.current()
+        self.pos += 1
+        return tok
+
+    def match(self, *types):
+        if self.current().type in types:
+            return self.advance()
+        return None
+
+    def consume(self, type, message):
+        if self.check(type):
+            return self.advance()
+        tok = self.current()
+        raise SableSyntaxError(message, tok.line, tok.col)
+
+    def error(self, message, tok=None):
+        tok = tok or self.current()
+        raise SableSyntaxError(message, tok.line, tok.col)
+
+    def parse(self):
+        statements = []
+        while not self.check("EOF"):
+            stmt = self.statement()
+            if stmt is not None:
+                statements.append(stmt)
+        return Program(statements)
+
+    def statement(self):
+        if self.match(";"):
+            return None
+        if self.check("let"):
+            return self.let_statement()
+        if (self.check("fn") and self.peek().type == "IDENT"
+                and self.peek(2).type == "("):
+            return self.fn_declaration()
+        if self.check("if"):
+            return self.if_statement()
+        if self.check("while"):
+            return self.while_statement()
+        if self.check("for"):
+            return self.for_statement()
+        if self.check("return"):
+            return self.return_statement()
+        if self.check("break"):
+            tok = self.advance()
+            self.consume(";", "expected ';' after 'break'")
+            return Break(tok.line)
+        if self.check("continue"):
+            tok = self.advance()
+            self.consume(";", "expected ';' after 'continue'")
+            return Continue(tok.line)
+        if self.check("{"):
+            return self.block()
+        expr = self.expression()
+        self.consume(";", "expected ';' after expression")
+        return ExprStmt(expr.line, expr)
+
+    def let_statement(self):
+        tok = self.advance()
+        name = self.consume("IDENT", "expected a variable name after 'let'")
+        value = None
+        if self.match("="):
+            value = self.expression()
+        self.consume(";", "expected ';' after let")
+        return Let(tok.line, name.value, value)
+
+    def fn_declaration(self):
+        tok = self.advance()
+        name = self.consume("IDENT", "expected a function name")
+        params = self.parameters()
+        body = self.block()
+        return FnDecl(tok.line, name.value, params, body)
+
+    def parameters(self):
+        self.consume("(", "expected '(' before parameters")
+        params = []
+        if not self.check(")"):
+            while True:
+                p = self.consume("IDENT", "expected a parameter name")
+                params.append(p.value)
+                if not self.match(","):
+                    break
+        self.consume(")", "expected ')' after parameters")
+        return params
+
+    def if_statement(self):
+        tok = self.advance()
+        cond = self.expression()
+        then_branch = self.block()
+        else_branch = None
+        if self.match("else"):
+            if self.check("if"):
+                else_branch = self.if_statement()
+            else:
+                else_branch = self.block()
+        return If(tok.line, cond, then_branch, else_branch)
+
+    def while_statement(self):
+        tok = self.advance()
+        cond = self.expression()
+        body = self.block()
+        return While(tok.line, cond, body)
+
+    def for_statement(self):
+        tok = self.advance()
+        var = self.consume("IDENT", "expected a loop variable")
+        self.consume("in", "expected 'in' after the loop variable")
+        iterable = self.expression()
+        body = self.block()
+        return For(tok.line, var.value, iterable, body)
+
+    def return_statement(self):
+        tok = self.advance()
+        value = None
+        if not self.check(";"):
+            value = self.expression()
+        self.consume(";", "expected ';' after return")
+        return Return(tok.line, value)
+
+    def block(self):
+        tok = self.consume("{", "expected '{'")
+        statements = []
+        while not self.check("}") and not self.check("EOF"):
+            stmt = self.statement()
+            if stmt is not None:
+                statements.append(stmt)
+        self.consume("}", "expected '}' after block")
+        return Block(tok.line, statements)
+
+    def expression(self):
+        return self.assignment()
+
+    def assignment(self):
+        expr = self.or_expr()
+        if self.match("=", "+=", "-=", "*=", "/="):
+            op = self.tokens[self.pos - 1].type
+            if not isinstance(expr, (Var, Index)):
+                self.error("invalid assignment target")
+            value = self.assignment()
+            return Assign(expr.line, expr, op, value)
+        return expr
+
+    def or_expr(self):
+        expr = self.and_expr()
+        while self.match("or"):
+            right = self.and_expr()
+            expr = Logical(expr.line, "or", expr, right)
+        return expr
+
+    def and_expr(self):
+        expr = self.equality()
+        while self.match("and"):
+            right = self.equality()
+            expr = Logical(expr.line, "and", expr, right)
+        return expr
+
+    def equality(self):
+        expr = self.comparison()
+        while self.match("==", "!="):
+            op = self.tokens[self.pos - 1].type
+            right = self.comparison()
+            expr = Binary(expr.line, op, expr, right)
+        return expr
+
+    def comparison(self):
+        expr = self.term()
+        while self.match("<", "<=", ">", ">="):
+            op = self.tokens[self.pos - 1].type
+            right = self.term()
+            expr = Binary(expr.line, op, expr, right)
+        return expr
+
+    def term(self):
+        expr = self.factor()
+        while self.match("+", "-"):
+            op = self.tokens[self.pos - 1].type
+            right = self.factor()
+            expr = Binary(expr.line, op, expr, right)
+        return expr
+
+    def factor(self):
+        expr = self.unary()
+        while self.match("*", "/", "%"):
+            op = self.tokens[self.pos - 1].type
+            right = self.unary()
+            expr = Binary(expr.line, op, expr, right)
+        return expr
+
+    def unary(self):
+        if self.match("not", "-"):
+            op = self.tokens[self.pos - 1]
+            operand = self.unary()
+            return Unary(op.line, op.type, operand)
+        return self.postfix()
+
+    def postfix(self):
+        expr = self.primary()
+        while True:
+            if self.match("("):
+                args = self.arguments()
+                expr = Call(expr.line, expr, args)
+            elif self.match("["):
+                index = self.expression()
+                self.consume("]", "expected ']' after index")
+                expr = Index(expr.line, expr, index)
+            else:
+                break
+        return expr
+
+    def arguments(self):
+        args = []
+        if not self.check(")"):
+            while True:
+                args.append(self.expression())
+                if not self.match(","):
+                    break
+        self.consume(")", "expected ')' after arguments")
+        return args
+
+    def primary(self):
+        tok = self.current()
+        if self.match("NUMBER"):
+            return Literal(tok.line, tok.value)
+        if self.match("STRING"):
+            return Literal(tok.line, tok.value)
+        if self.match("true"):
+            return Literal(tok.line, True)
+        if self.match("false"):
+            return Literal(tok.line, False)
+        if self.match("nil"):
+            return Literal(tok.line, None)
+        if self.match("IDENT"):
+            return Var(tok.line, tok.value)
+        if self.match("("):
+            expr = self.expression()
+            self.consume(")", "expected ')' after expression")
+            return expr
+        if self.match("["):
+            elements = []
+            if not self.check("]"):
+                while True:
+                    elements.append(self.expression())
+                    if not self.match(","):
+                        break
+            self.consume("]", "expected ']' after list")
+            return ListLit(tok.line, elements)
+        if self.match("{"):
+            pairs = []
+            if not self.check("}"):
+                while True:
+                    key = self.expression()
+                    self.consume(":", "expected ':' between map key and value")
+                    value = self.expression()
+                    pairs.append((key, value))
+                    if not self.match(","):
+                        break
+            self.consume("}", "expected '}' after map")
+            return MapLit(tok.line, pairs)
+        if self.match("fn"):
+            params = self.parameters()
+            body = self.block()
+            return FnExpr(tok.line, params, body)
+        self.error(f"unexpected token {tok.type!r}")
+
+
