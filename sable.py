@@ -613,3 +613,171 @@ class Parser:
         self.error(f"unexpected token {tok.type!r}")
 
 
+class ReturnSignal(Exception):
+    def __init__(self, value, line):
+        self.value = value
+        self.line = line
+
+
+class BreakSignal(Exception):
+    def __init__(self, line):
+        self.line = line
+
+
+class ContinueSignal(Exception):
+    def __init__(self, line):
+        self.line = line
+
+
+class Environment:
+    def __init__(self, parent=None):
+        self.values = {}
+        self.parent = parent
+
+    def define(self, name, value):
+        self.values[name] = value
+
+    def get(self, name, line):
+        env = self
+        while env is not None:
+            if name in env.values:
+                return env.values[name]
+            env = env.parent
+        raise SableRuntimeError(f"undefined variable '{name}'", line)
+
+    def assign(self, name, value, line):
+        env = self
+        while env is not None:
+            if name in env.values:
+                env.values[name] = value
+                return
+            env = env.parent
+        raise SableRuntimeError(f"cannot assign to undefined variable '{name}'", line)
+
+
+class Function:
+    def __init__(self, name, params, body, closure):
+        self.name = name
+        self.params = params
+        self.body = body
+        self.closure = closure
+
+    def __repr__(self):
+        return f"<fn {self.name or 'anonymous'}>"
+
+
+class Builtin:
+    def __init__(self, name, fn, min_args, max_args):
+        self.name = name
+        self.fn = fn
+        self.min_args = min_args
+        self.max_args = max_args
+
+    def __repr__(self):
+        return f"<builtin {self.name}>"
+
+
+def is_number(value):
+    return isinstance(value, float)
+
+
+def truthy(value):
+    return value is not None and value is not False
+
+
+def format_number(n):
+    if math.isnan(n):
+        return "nan"
+    if math.isinf(n):
+        return "inf" if n > 0 else "-inf"
+    if n.is_integer() and abs(n) < 1e16:
+        return str(int(n))
+    return format(n, ".15g")
+
+
+def repr_value(value):
+    if isinstance(value, str):
+        text = value.replace("\\", "\\\\").replace('"', '\\"')
+        text = text.replace("\n", "\\n").replace("\t", "\\t").replace("\r", "\\r")
+        return '"' + text + '"'
+    return to_display(value)
+
+
+def to_display(value):
+    if value is None:
+        return "nil"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return format_number(value)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "[" + ", ".join(repr_value(v) for v in value) + "]"
+    if isinstance(value, dict):
+        parts = [repr_value(k) + ": " + repr_value(v) for k, v in value.items()]
+        return "{" + ", ".join(parts) + "}"
+    if isinstance(value, (Function, Builtin)):
+        return repr(value)
+    return str(value)
+
+
+def sable_equal(a, b):
+    if a is None or b is None:
+        return a is b
+    if isinstance(a, bool) or isinstance(b, bool):
+        return isinstance(a, bool) and isinstance(b, bool) and a == b
+    if isinstance(a, float) and isinstance(b, float):
+        return a == b
+    if isinstance(a, str) and isinstance(b, str):
+        return a == b
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(sable_equal(x, y) for x, y in zip(a, b))
+    if isinstance(a, dict) and isinstance(b, dict):
+        if set(a.keys()) != set(b.keys()):
+            return False
+        return all(sable_equal(a[k], b[k]) for k in a)
+    return a is b
+
+
+def apply_binary(op, left, right, line):
+    if op == "+":
+        if is_number(left) and is_number(right):
+            return left + right
+        if isinstance(left, str) and isinstance(right, str):
+            return left + right
+        if isinstance(left, list) and isinstance(right, list):
+            return left + right
+        raise SableRuntimeError("cannot add these values", line)
+    if op in ("-", "*", "/", "%"):
+        if not (is_number(left) and is_number(right)):
+            raise SableRuntimeError(f"operator '{op}' expects numbers", line)
+        if op == "-":
+            return left - right
+        if op == "*":
+            return left * right
+        if op == "/":
+            if right == 0:
+                raise SableRuntimeError("division by zero", line)
+            return left / right
+        if right == 0:
+            raise SableRuntimeError("division by zero", line)
+        return math.fmod(left, right)
+    if op == "==":
+        return sable_equal(left, right)
+    if op == "!=":
+        return not sable_equal(left, right)
+    if op in ("<", "<=", ">", ">="):
+        if not ((is_number(left) and is_number(right))
+                or (isinstance(left, str) and isinstance(right, str))):
+            raise SableRuntimeError(f"operator '{op}' cannot compare these values", line)
+        if op == "<":
+            return left < right
+        if op == "<=":
+            return left <= right
+        if op == ">":
+            return left > right
+        return left >= right
+    raise SableRuntimeError(f"unknown operator '{op}'", line)
+
+
