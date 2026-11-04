@@ -781,3 +781,404 @@ def apply_binary(op, left, right, line):
     raise SableRuntimeError(f"unknown operator '{op}'", line)
 
 
+class Interpreter:
+    def __init__(self):
+        self.globals = Environment()
+        self.install_builtins()
+
+    def run(self, program):
+        result = None
+        try:
+            for stmt in program.statements:
+                result = self.execute(stmt, self.globals)
+        except ReturnSignal as signal:
+            raise SableRuntimeError("'return' outside a function", signal.line)
+        except BreakSignal as signal:
+            raise SableRuntimeError("'break' outside a loop", signal.line)
+        except ContinueSignal as signal:
+            raise SableRuntimeError("'continue' outside a loop", signal.line)
+        return result
+
+    def execute(self, stmt, env):
+        method = getattr(self, "exec_" + type(stmt).__name__)
+        return method(stmt, env)
+
+    def evaluate(self, expr, env):
+        method = getattr(self, "eval_" + type(expr).__name__)
+        return method(expr, env)
+
+    def exec_Block(self, stmt, env):
+        block_env = Environment(env)
+        result = None
+        for child in stmt.statements:
+            result = self.execute(child, block_env)
+        return result
+
+    def exec_Let(self, stmt, env):
+        value = None if stmt.value is None else self.evaluate(stmt.value, env)
+        env.define(stmt.name, value)
+        return None
+
+    def exec_FnDecl(self, stmt, env):
+        env.define(stmt.name, Function(stmt.name, stmt.params, stmt.body, env))
+        return None
+
+    def exec_If(self, stmt, env):
+        if truthy(self.evaluate(stmt.cond, env)):
+            return self.execute(stmt.then_branch, env)
+        if stmt.else_branch is not None:
+            return self.execute(stmt.else_branch, env)
+        return None
+
+    def exec_While(self, stmt, env):
+        while truthy(self.evaluate(stmt.cond, env)):
+            try:
+                self.execute(stmt.body, env)
+            except ContinueSignal:
+                continue
+            except BreakSignal:
+                break
+        return None
+
+    def exec_For(self, stmt, env):
+        iterable = self.evaluate(stmt.iterable, env)
+        for item in self.iterable_items(iterable, stmt.line):
+            loop_env = Environment(env)
+            loop_env.define(stmt.var, item)
+            try:
+                self.execute(stmt.body, loop_env)
+            except ContinueSignal:
+                continue
+            except BreakSignal:
+                break
+        return None
+
+    def exec_Return(self, stmt, env):
+        value = None if stmt.value is None else self.evaluate(stmt.value, env)
+        raise ReturnSignal(value, stmt.line)
+
+    def exec_Break(self, stmt, env):
+        raise BreakSignal(stmt.line)
+
+    def exec_Continue(self, stmt, env):
+        raise ContinueSignal(stmt.line)
+
+    def exec_ExprStmt(self, stmt, env):
+        return self.evaluate(stmt.expr, env)
+
+    def eval_Literal(self, expr, env):
+        return expr.value
+
+    def eval_Var(self, expr, env):
+        return env.get(expr.name, expr.line)
+
+    def eval_Assign(self, expr, env):
+        target = expr.target
+        if isinstance(target, Var):
+            if expr.op == "=":
+                value = self.evaluate(expr.value, env)
+            else:
+                current = env.get(target.name, expr.line)
+                value = apply_binary(expr.op[:-1], current,
+                                     self.evaluate(expr.value, env), expr.line)
+            env.assign(target.name, value, expr.line)
+            return value
+        if isinstance(target, Index):
+            obj = self.evaluate(target.obj, env)
+            index = self.evaluate(target.index, env)
+            if expr.op == "=":
+                value = self.evaluate(expr.value, env)
+            else:
+                current = self.get_index(obj, index, expr.line)
+                value = apply_binary(expr.op[:-1], current,
+                                     self.evaluate(expr.value, env), expr.line)
+            self.set_index(obj, index, value, expr.line)
+            return value
+        raise SableRuntimeError("invalid assignment target", expr.line)
+
+    def eval_Logical(self, expr, env):
+        left = self.evaluate(expr.left, env)
+        if expr.op == "or":
+            if truthy(left):
+                return left
+            return self.evaluate(expr.right, env)
+        if not truthy(left):
+            return left
+        return self.evaluate(expr.right, env)
+
+    def eval_Binary(self, expr, env):
+        left = self.evaluate(expr.left, env)
+        right = self.evaluate(expr.right, env)
+        return apply_binary(expr.op, left, right, expr.line)
+
+    def eval_Unary(self, expr, env):
+        value = self.evaluate(expr.operand, env)
+        if expr.op == "not":
+            return not truthy(value)
+        if not is_number(value):
+            raise SableRuntimeError("unary '-' expects a number", expr.line)
+        return -value
+
+    def eval_Call(self, expr, env):
+        callee = self.evaluate(expr.callee, env)
+        args = [self.evaluate(arg, env) for arg in expr.args]
+        return self.call_value(callee, args, expr.line)
+
+    def eval_Index(self, expr, env):
+        obj = self.evaluate(expr.obj, env)
+        index = self.evaluate(expr.index, env)
+        return self.get_index(obj, index, expr.line)
+
+    def eval_ListLit(self, expr, env):
+        return [self.evaluate(item, env) for item in expr.elements]
+
+    def eval_MapLit(self, expr, env):
+        result = {}
+        for key_expr, value_expr in expr.pairs:
+            key = self.evaluate(key_expr, env)
+            if not isinstance(key, str):
+                raise SableRuntimeError("map keys must be strings", expr.line)
+            result[key] = self.evaluate(value_expr, env)
+        return result
+
+    def eval_FnExpr(self, expr, env):
+        return Function(None, expr.params, expr.body, env)
+
+    def call_value(self, callee, args, line):
+        if isinstance(callee, Builtin):
+            if len(args) < callee.min_args or (callee.max_args is not None
+                                               and len(args) > callee.max_args):
+                raise SableRuntimeError(
+                    f"{callee.name}() got {len(args)} argument(s)", line)
+            return callee.fn(args, line)
+        if isinstance(callee, Function):
+            if len(args) != len(callee.params):
+                name = callee.name or "function"
+                raise SableRuntimeError(
+                    f"{name}() expects {len(callee.params)} argument(s), got {len(args)}",
+                    line)
+            call_env = Environment(callee.closure)
+            for name, value in zip(callee.params, args):
+                call_env.define(name, value)
+            try:
+                self.execute(callee.body, call_env)
+            except ReturnSignal as signal:
+                return signal.value
+            except BreakSignal as signal:
+                raise SableRuntimeError("'break' outside a loop", signal.line)
+            except ContinueSignal as signal:
+                raise SableRuntimeError("'continue' outside a loop", signal.line)
+            return None
+        raise SableRuntimeError("value is not callable", line)
+
+    def iterable_items(self, value, line):
+        if isinstance(value, list):
+            return list(value)
+        if isinstance(value, str):
+            return list(value)
+        if isinstance(value, dict):
+            return list(value.keys())
+        raise SableRuntimeError("value is not iterable", line)
+
+    def require_int(self, value, line, what):
+        if not is_number(value) or not value.is_integer():
+            raise SableRuntimeError(f"{what} must be an integer", line)
+        return int(value)
+
+    def get_index(self, obj, index, line):
+        if isinstance(obj, list):
+            i = self.require_int(index, line, "list index")
+            if i < 0:
+                i += len(obj)
+            if i < 0 or i >= len(obj):
+                raise SableRuntimeError("list index out of range", line)
+            return obj[i]
+        if isinstance(obj, str):
+            i = self.require_int(index, line, "string index")
+            if i < 0:
+                i += len(obj)
+            if i < 0 or i >= len(obj):
+                raise SableRuntimeError("string index out of range", line)
+            return obj[i]
+        if isinstance(obj, dict):
+            if not isinstance(index, str):
+                raise SableRuntimeError("map keys must be strings", line)
+            return obj.get(index)
+        raise SableRuntimeError("value is not indexable", line)
+
+    def set_index(self, obj, index, value, line):
+        if isinstance(obj, list):
+            i = self.require_int(index, line, "list index")
+            if i < 0:
+                i += len(obj)
+            if i < 0 or i >= len(obj):
+                raise SableRuntimeError("list index out of range", line)
+            obj[i] = value
+            return
+        if isinstance(obj, dict):
+            if not isinstance(index, str):
+                raise SableRuntimeError("map keys must be strings", line)
+            obj[index] = value
+            return
+        if isinstance(obj, str):
+            raise SableRuntimeError("strings are immutable", line)
+        raise SableRuntimeError("value does not support item assignment", line)
+
+    def install_builtins(self):
+        def register(name, fn, min_args=0, max_args=None):
+            self.globals.define(name, Builtin(name, fn, min_args, max_args))
+
+        register("print", self.builtin_print, 0, None)
+        register("len", self.builtin_len, 1, 1)
+        register("str", self.builtin_str, 1, 1)
+        register("num", self.builtin_num, 1, 1)
+        register("type", self.builtin_type, 1, 1)
+        register("range", self.builtin_range, 1, 3)
+        register("push", self.builtin_push, 2, 2)
+        register("pop", self.builtin_pop, 1, 1)
+        register("keys", self.builtin_keys, 1, 1)
+        register("has", self.builtin_has, 2, 2)
+        register("input", self.builtin_input, 0, 1)
+        register("assert", self.builtin_assert, 1, 2)
+        register("sort", self.builtin_sort, 1, 1)
+        register("upper", self.builtin_upper, 1, 1)
+        register("lower", self.builtin_lower, 1, 1)
+        register("join", self.builtin_join, 2, 2)
+        register("split", self.builtin_split, 2, 2)
+
+    def builtin_print(self, args, line):
+        print(" ".join(to_display(value) for value in args))
+        return None
+
+    def builtin_len(self, args, line):
+        value = args[0]
+        if isinstance(value, (str, list, dict)):
+            return float(len(value))
+        raise SableRuntimeError("len() expects a string, list, or map", line)
+
+    def builtin_str(self, args, line):
+        return to_display(args[0])
+
+    def builtin_num(self, args, line):
+        value = args[0]
+        if is_number(value):
+            return value
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                raise SableRuntimeError(f"cannot convert {value!r} to a number", line)
+        raise SableRuntimeError("num() expects a string or number", line)
+
+    def builtin_type(self, args, line):
+        value = args[0]
+        if value is None:
+            return "nil"
+        if isinstance(value, bool):
+            return "bool"
+        if isinstance(value, float):
+            return "number"
+        if isinstance(value, str):
+            return "string"
+        if isinstance(value, list):
+            return "list"
+        if isinstance(value, dict):
+            return "map"
+        if isinstance(value, Function):
+            return "function"
+        if isinstance(value, Builtin):
+            return "builtin"
+        return "unknown"
+
+    def builtin_range(self, args, line):
+        if len(args) == 1:
+            start, end, step = 0.0, args[0], 1.0
+        elif len(args) == 2:
+            start, end, step = args[0], args[1], 1.0
+        else:
+            start, end, step = args[0], args[1], args[2]
+        start_i = self.require_int(start, line, "range start")
+        end_i = self.require_int(end, line, "range end")
+        step_i = self.require_int(step, line, "range step")
+        if step_i == 0:
+            raise SableRuntimeError("range step cannot be zero", line)
+        return [float(i) for i in range(start_i, end_i, step_i)]
+
+    def builtin_push(self, args, line):
+        target, value = args
+        if not isinstance(target, list):
+            raise SableRuntimeError("push() expects a list", line)
+        target.append(value)
+        return target
+
+    def builtin_pop(self, args, line):
+        target = args[0]
+        if not isinstance(target, list):
+            raise SableRuntimeError("pop() expects a list", line)
+        if not target:
+            raise SableRuntimeError("cannot pop from an empty list", line)
+        return target.pop()
+
+    def builtin_keys(self, args, line):
+        target = args[0]
+        if not isinstance(target, dict):
+            raise SableRuntimeError("keys() expects a map", line)
+        return list(target.keys())
+
+    def builtin_has(self, args, line):
+        target, key = args
+        if not isinstance(target, dict):
+            raise SableRuntimeError("has() expects a map", line)
+        if not isinstance(key, str):
+            raise SableRuntimeError("map keys must be strings", line)
+        return key in target
+
+    def builtin_input(self, args, line):
+        prompt = args[0] if args else ""
+        if not isinstance(prompt, str):
+            raise SableRuntimeError("input() expects a string prompt", line)
+        return input(prompt)
+
+    def builtin_assert(self, args, line):
+        if not truthy(args[0]):
+            message = to_display(args[1]) if len(args) > 1 else "assertion failed"
+            raise SableRuntimeError(message, line)
+        return None
+
+    def builtin_sort(self, args, line):
+        target = args[0]
+        if not isinstance(target, list):
+            raise SableRuntimeError("sort() expects a list", line)
+        try:
+            return sorted(target)
+        except TypeError:
+            raise SableRuntimeError("sort() cannot compare these values", line)
+
+    def builtin_upper(self, args, line):
+        if not isinstance(args[0], str):
+            raise SableRuntimeError("upper() expects a string", line)
+        return args[0].upper()
+
+    def builtin_lower(self, args, line):
+        if not isinstance(args[0], str):
+            raise SableRuntimeError("lower() expects a string", line)
+        return args[0].lower()
+
+    def builtin_join(self, args, line):
+        items, separator = args
+        if not isinstance(items, list) or not isinstance(separator, str):
+            raise SableRuntimeError("join() expects a list and a string", line)
+        for item in items:
+            if not isinstance(item, str):
+                raise SableRuntimeError("join() expects a list of strings", line)
+        return separator.join(items)
+
+    def builtin_split(self, args, line):
+        text, separator = args
+        if not isinstance(text, str) or not isinstance(separator, str):
+            raise SableRuntimeError("split() expects two strings", line)
+        if separator == "":
+            raise SableRuntimeError("split() separator cannot be empty", line)
+        return text.split(separator)
+
+
