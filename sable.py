@@ -1182,3 +1182,147 @@ class Interpreter:
         return text.split(separator)
 
 
+def lex(source):
+    return Lexer(source).scan()
+
+
+def parse(source):
+    return Parser(lex(source), source).parse()
+
+
+def interpret(program):
+    return Interpreter().run(program)
+
+
+def run_source(source):
+    return interpret(parse(source))
+
+
+def format_error(error, source):
+    lines = source.splitlines() or [""]
+    text = f"{error.kind}: {error.message}"
+    if 1 <= error.line <= len(lines):
+        text += f"\n  line {error.line}: {lines[error.line - 1]}"
+        text += "\n  " + " " * max(0, error.col - 1) + "^"
+    return text
+
+
+def brackets_balanced(source):
+    depth = 0
+    in_string = False
+    escaped = False
+    i = 0
+    while i < len(source):
+        c = source[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif c == "\\":
+                escaped = True
+            elif c == '"':
+                in_string = False
+        else:
+            if c == '"':
+                in_string = True
+            elif c == "/" and i + 1 < len(source) and source[i + 1] == "/":
+                while i < len(source) and source[i] != "\n":
+                    i += 1
+            elif c == "/" and i + 1 < len(source) and source[i + 1] == "*":
+                i += 2
+                while i + 1 < len(source) and not (source[i] == "*" and source[i + 1] == "/"):
+                    i += 1
+                i += 1
+            elif c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+        i += 1
+    return depth <= 0 and not in_string
+
+
+def read_source(path):
+    if path == "-":
+        return sys.stdin.read()
+    with open(path, "r", encoding="utf-8") as handle:
+        return handle.read()
+
+
+def repl():
+    print(f"Sable {VERSION}  (Ctrl-D to quit)")
+    buffer = ""
+    while True:
+        prompt = "sable> " if not buffer else "  ... "
+        try:
+            line = input(prompt)
+        except EOFError:
+            print()
+            break
+        except KeyboardInterrupt:
+            print()
+            buffer = ""
+            continue
+        buffer += line + "\n"
+        if not brackets_balanced(buffer):
+            continue
+        try:
+            value = run_source(buffer)
+            if value is not None:
+                print(to_display(value))
+        except SableError as error:
+            print(format_error(error, buffer))
+        buffer = ""
+
+
+def main(argv=None):
+    argv = sys.argv if argv is None else argv
+    if len(argv) == 1:
+        repl()
+        return 0
+    arg = argv[1]
+    if arg in ("-v", "--version"):
+        print(f"Sable {VERSION}")
+        return 0
+    if arg in ("-h", "--help"):
+        print("usage: sable [options] [file]")
+        print()
+        print("  sable              start the REPL")
+        print("  sable file.sable   run a program")
+        print("  sable --tokens f   print the token stream")
+        print("  sable --ast f      print the parsed AST")
+        print("  sable -v           print the version")
+        return 0
+    if arg in ("--tokens", "--ast"):
+        if len(argv) < 3:
+            print(f"{arg} needs a file", file=sys.stderr)
+            return 1
+        try:
+            source = read_source(argv[2])
+        except OSError as error:
+            print(f"sable: {error}", file=sys.stderr)
+            return 1
+        try:
+            if arg == "--tokens":
+                for token in lex(source):
+                    print(token)
+            else:
+                import pprint
+                pprint.pprint(parse(source))
+        except SableError as error:
+            print(format_error(error, source), file=sys.stderr)
+            return 1
+        return 0
+    try:
+        source = read_source(arg)
+    except OSError as error:
+        print(f"sable: {error}", file=sys.stderr)
+        return 1
+    try:
+        run_source(source)
+    except SableError as error:
+        print(format_error(error, source), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
