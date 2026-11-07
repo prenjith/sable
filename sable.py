@@ -1249,6 +1249,7 @@ def read_source(path):
 
 def repl():
     print(f"Sable {VERSION}  (Ctrl-D to quit)")
+    interpreter = Interpreter()
     buffer = ""
     while True:
         prompt = "sable> " if not buffer else "  ... "
@@ -1265,7 +1266,8 @@ def repl():
         if not brackets_balanced(buffer):
             continue
         try:
-            value = run_source(buffer)
+            program = parse(buffer)
+            value = interpreter.run(program)
             if value is not None:
                 print(to_display(value))
         except SableError as error:
