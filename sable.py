@@ -784,6 +784,7 @@ def apply_binary(op, left, right, line):
 class Interpreter:
     def __init__(self):
         self.globals = Environment()
+        self.depth = 0
         self.install_builtins()
 
     def run(self, program):
@@ -957,6 +958,10 @@ class Interpreter:
                 raise SableRuntimeError(
                     f"{name}() expects {len(callee.params)} argument(s), got {len(args)}",
                     line)
+            self.depth += 1
+            if self.depth > 1000:
+                self.depth -= 1
+                raise SableRuntimeError("stack overflow", line)
             call_env = Environment(callee.closure)
             for name, value in zip(callee.params, args):
                 call_env.define(name, value)
@@ -968,6 +973,8 @@ class Interpreter:
                 raise SableRuntimeError("'break' outside a loop", signal.line)
             except ContinueSignal as signal:
                 raise SableRuntimeError("'continue' outside a loop", signal.line)
+            finally:
+                self.depth -= 1
             return None
         raise SableRuntimeError("value is not callable", line)
 
