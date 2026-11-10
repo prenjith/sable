@@ -1,0 +1,15 @@
+let text = "the quick brown fox jumps over the lazy dog the fox";
+let words = split(text, " ");
+let counts = {};
+
+for word in words {
+    if has(counts, word) {
+        counts[word] = counts[word] + 1;
+    } else {
+        counts[word] = 1;
+    }
+}
+
+for word in keys(counts) {
+    print(word + ": " + str(counts[word]));
+}
