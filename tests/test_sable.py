@@ -1,0 +1,202 @@
+import contextlib
+import io
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import sable
+
+
+def run(source):
+    output = io.StringIO()
+    error = None
+    with contextlib.redirect_stdout(output):
+        try:
+            sable.run_source(source)
+        except sable.SableError as exc:
+            error = exc
+    return output.getvalue(), error
+
+
+class TestExpressions(unittest.TestCase):
+    def test_arithmetic(self):
+        out, err = run("print(1 + 2 * 3); print((1 + 2) * 3); print(7 / 2); print(7 % 2); print(-5 + 2);")
+        self.assertIsNone(err)
+        self.assertEqual(out, "7\n9\n3.5\n1\n-3\n")
+
+    def test_strings(self):
+        out, err = run('print("a" + "b"); print(len("hello")); print("hello"[1]); print("hello"[-1]);')
+        self.assertIsNone(err)
+        self.assertEqual(out, "ab\n5\ne\no\n")
+
+    def test_escapes(self):
+        out, err = run('print("line\\nnext"); print("tab\\there"); print("quote\\"here");')
+        self.assertIsNone(err)
+        self.assertEqual(out, 'line\nnext\ntab\there\nquote"here\n')
+
+    def test_equality(self):
+        out, err = run('print(1 == 1); print(1 == 2); print("a" != "b"); print(nil == nil); print([1, 2] == [1, 2]);')
+        self.assertIsNone(err)
+        self.assertEqual(out, "true\nfalse\ntrue\ntrue\ntrue\n")
+
+    def test_logic(self):
+        out, err = run('print(true and false); print(false or 5); print(not nil);')
+        self.assertIsNone(err)
+        self.assertEqual(out, "false\n5\ntrue\n")
+
+    def test_precedence(self):
+        out, err = run("print(2 + 3 * 4 - 1); print(10 / 2 + 3);")
+        self.assertIsNone(err)
+        self.assertEqual(out, "13\n8\n")
+
+
+class TestStatements(unittest.TestCase):
+    def test_variables_and_scope(self):
+        out, err = run("let x = 10; { let x = 20; print(x); } print(x); x = x + 1; print(x);")
+        self.assertIsNone(err)
+        self.assertEqual(out, "20\n10\n11\n")
+
+    def test_if_else(self):
+        out, err = run('let n = 5; if n > 10 { print("big"); } else if n > 3 { print("mid"); } else { print("small"); }')
+        self.assertIsNone(err)
+        self.assertEqual(out, "mid\n")
+
+    def test_while_break_continue(self):
+        out, err = run("let i = 0; while i < 10 { i = i + 1; if i % 2 == 0 { continue; } if i > 7 { break; } print(i); }")
+        self.assertIsNone(err)
+        self.assertEqual(out, "1\n3\n5\n7\n")
+
+    def test_for(self):
+        out, err = run('for x in [1, 2, 3] { print(x); } for c in "ab" { print(c); } for i in range(3) { print(i); }')
+        self.assertIsNone(err)
+        self.assertEqual(out, "1\n2\n3\na\nb\n0\n1\n2\n")
+
+    def test_compound_assignment(self):
+        out, err = run("let x = 1; x += 2; x *= 3; print(x);")
+        self.assertIsNone(err)
+        self.assertEqual(out, "9\n")
+
+    def test_comments(self):
+        out, err = run("// a comment\nlet x = 1; /* block\ncomment */ print(x);")
+        self.assertIsNone(err)
+        self.assertEqual(out, "1\n")
+
+
+class TestFunctions(unittest.TestCase):
+    def test_recursion(self):
+        out, err = run("fn fact(n) { if n <= 1 { return 1; } return n * fact(n - 1); } print(fact(5));")
+        self.assertIsNone(err)
+        self.assertEqual(out, "120\n")
+
+    def test_closures(self):
+        out, err = run("fn make_counter() { let n = 0; fn next() { n = n + 1; return n; } return next; } let c = make_counter(); print(c()); print(c());")
+        self.assertIsNone(err)
+        self.assertEqual(out, "1\n2\n")
+
+    def test_function_expression(self):
+        out, err = run("let add = fn(a, b) { return a + b; }; print(add(2, 3));")
+        self.assertIsNone(err)
+        self.assertEqual(out, "5\n")
+
+    def test_implicit_nil(self):
+        out, err = run("fn f() { let x = 1; } print(f());")
+        self.assertIsNone(err)
+        self.assertEqual(out, "nil\n")
+
+
+class TestCollections(unittest.TestCase):
+    def test_lists(self):
+        out, err = run("let a = [1, 2, 3]; a[0] = 10; a[-1] = 30; print(a); print(len(a)); push(a, 4); print(pop(a)); print(a);")
+        self.assertIsNone(err)
+        self.assertEqual(out, "[10, 2, 30]\n3\n4\n[10, 2, 30]\n")
+
+    def test_maps(self):
+        out, err = run('let m = {"a": 1, "b": 2}; print(m["a"]); m["c"] = 3; print(len(m)); print(has(m, "c")); print(keys(m)); print(m);')
+        self.assertIsNone(err)
+        self.assertEqual(out, '1\n3\ntrue\n["a", "b", "c"]\n{"a": 1, "b": 2, "c": 3}\n')
+
+    def test_builtins(self):
+        out, err = run('print(str(12)); print(num("3.5")); print(type(nil)); print(type([])); print(type({})); print(upper("hi")); print(lower("HI")); print(join(["a", "b"], "-")); print(split("a-b", "-")); print(sort([3, 1, 2]));')
+        self.assertIsNone(err)
+        self.assertEqual(out, '12\n3.5\nnil\nlist\nmap\nHI\nhi\na-b\n["a", "b"]\n[1, 2, 3]\n')
+
+    def test_map_in_expression(self):
+        out, err = run('print({"a": 1}["a"]);')
+        self.assertIsNone(err)
+        self.assertEqual(out, "1\n")
+
+
+class TestRepl(unittest.TestCase):
+    def test_state_persists(self):
+        inputs = iter(["let x = 2;", "x * 3;", "fn f(n) { return n + 1; }", "f(41);"])
+
+        def fake_input(prompt=""):
+            try:
+                return next(inputs)
+            except StopIteration:
+                raise EOFError
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), mock.patch("builtins.input", fake_input):
+            sable.repl()
+        text = output.getvalue()
+        self.assertIn("6", text)
+        self.assertIn("42", text)
+
+
+class TestErrors(unittest.TestCase):
+    def test_undefined_variable(self):
+        out, err = run("print(missing);")
+        self.assertIsNotNone(err)
+        self.assertIn("undefined variable 'missing'", err.message)
+
+    def test_type_error(self):
+        out, err = run('print(1 + "a");')
+        self.assertIsNotNone(err)
+        self.assertIn("cannot add", err.message)
+
+    def test_division_by_zero(self):
+        out, err = run("print(1 / 0);")
+        self.assertIsNotNone(err)
+        self.assertIn("division by zero", err.message)
+
+    def test_syntax_error(self):
+        out, err = run("let x = ;")
+        self.assertIsNotNone(err)
+        self.assertIsInstance(err, sable.SableSyntaxError)
+
+    def test_arity_error(self):
+        out, err = run("fn f(a) { return a; } f();")
+        self.assertIsNotNone(err)
+        self.assertIn("expects 1 argument", err.message)
+
+    def test_index_error(self):
+        out, err = run("let a = [1]; print(a[5]);")
+        self.assertIsNotNone(err)
+        self.assertIn("out of range", err.message)
+
+    def test_string_immutable(self):
+        out, err = run('let s = "a"; s[0] = "b";')
+        self.assertIsNotNone(err)
+        self.assertIn("immutable", err.message)
+
+    def test_break_outside_loop(self):
+        out, err = run("break;")
+        self.assertIsNotNone(err)
+        self.assertIn("outside a loop", err.message)
+
+    def test_stack_overflow(self):
+        out, err = run("fn loop(n) { return loop(n + 1); } loop(0);")
+        self.assertIsNotNone(err)
+        self.assertIn("stack overflow", err.message)
+
+    def test_return_outside_function(self):
+        out, err = run("return 1;")
+        self.assertIsNotNone(err)
+        self.assertIn("outside a function", err.message)
+
+
+if __name__ == "__main__":
+    unittest.main()
