@@ -1,0 +1,10 @@
+let user = {"name": "ana", "age": 15, "tags": ["student", "artist"]};
+
+print(user.name);
+print(user.tags[1]);
+
+user.age = user.age + 1;
+user.tags = push(user.tags, "reader");
+
+print(user.age);
+print(user.tags);

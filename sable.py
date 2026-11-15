@@ -4,6 +4,7 @@
 import sys
 import math
 import bisect
+import functools
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
@@ -30,9 +31,16 @@ class SableRuntimeError(SableError):
     kind = "RuntimeError"
 
 
+class SableThrown(Exception):
+    def __init__(self, value, line):
+        self.value = value
+        self.line = line
+
+
 KEYWORDS = {
-    "let", "fn", "if", "else", "while", "for", "in", "return",
-    "break", "continue", "true", "false", "nil", "and", "or", "not",
+    "let", "const", "fn", "if", "else", "while", "for", "in", "return",
+    "break", "continue", "try", "catch", "throw", "match",
+    "true", "false", "nil", "and", "or", "not",
 }
 
 
@@ -172,12 +180,12 @@ class Lexer:
     def operator(self):
         start = self.pos
         two = self.src[self.pos:self.pos + 2]
-        if two in ("==", "!=", "<=", ">=", "+=", "-=", "*=", "/="):
+        if two in ("==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "=>", "|>"):
             self.pos += 2
             self.add(two, two, start)
             return
         c = self.src[self.pos]
-        if c in "+-*/%=<>(){}[],:;":
+        if c in "+-*/%=<>(){}[],:;.":
             self.pos += 1
             self.add(c, c, start)
             return
@@ -241,6 +249,41 @@ class Break:
 @dataclass
 class Continue:
     line: int
+
+
+@dataclass
+class Const:
+    line: int
+    name: str
+    value: Any
+
+
+@dataclass
+class TryCatch:
+    line: int
+    try_block: Any
+    error_name: str
+    catch_block: Any
+
+
+@dataclass
+class Throw:
+    line: int
+    value: Any
+
+
+@dataclass
+class Match:
+    line: int
+    value: Any
+    arms: List[Any]
+
+
+@dataclass
+class Pipe:
+    line: int
+    left: Any
+    right: Any
 
 
 @dataclass
@@ -380,6 +423,14 @@ class Parser:
             return None
         if self.check("let"):
             return self.let_statement()
+        if self.check("const"):
+            return self.const_statement()
+        if self.check("try"):
+            return self.try_statement()
+        if self.check("throw"):
+            return self.throw_statement()
+        if self.check("match"):
+            return self.match_statement()
         if (self.check("fn") and self.peek().type == "IDENT"
                 and self.peek(2).type == "("):
             return self.fn_declaration()
@@ -467,6 +518,60 @@ class Parser:
         self.consume(";", "expected ';' after return")
         return Return(tok.line, value)
 
+    def const_statement(self):
+        tok = self.advance()
+        name = self.consume("IDENT", "expected a name after 'const'")
+        self.consume("=", "const declarations need a value")
+        value = self.expression()
+        self.consume(";", "expected ';' after const")
+        return Const(tok.line, name.value, value)
+
+    def try_statement(self):
+        tok = self.advance()
+        try_block = self.block()
+        self.consume("catch", "expected 'catch' after the try block")
+        name = self.consume("IDENT", "expected an error name after 'catch'")
+        catch_block = self.block()
+        return TryCatch(tok.line, try_block, name.value, catch_block)
+
+    def throw_statement(self):
+        tok = self.advance()
+        value = self.expression()
+        self.consume(";", "expected ';' after throw")
+        return Throw(tok.line, value)
+
+    def match_statement(self):
+        tok = self.advance()
+        value = self.expression()
+        self.consume("{", "expected '{' after the match value")
+        arms = []
+        while not self.check("}") and not self.check("EOF"):
+            pattern = self.pattern()
+            self.consume("=>", "expected '=>' after a match pattern")
+            body = self.statement()
+            if body is not None:
+                arms.append((pattern, body))
+        self.consume("}", "expected '}' after match arms")
+        return Match(tok.line, value, arms)
+
+    def pattern(self):
+        tok = self.current()
+        if self.match("NUMBER"):
+            return ("literal", tok.value)
+        if self.match("STRING"):
+            return ("literal", tok.value)
+        if self.match("true"):
+            return ("literal", True)
+        if self.match("false"):
+            return ("literal", False)
+        if self.match("nil"):
+            return ("literal", None)
+        if self.match("IDENT"):
+            if tok.value == "_":
+                return ("wild", None)
+            return ("bind", tok.value)
+        self.error("expected a match pattern")
+
     def block(self):
         tok = self.consume("{", "expected '{'")
         statements = []
@@ -481,13 +586,20 @@ class Parser:
         return self.assignment()
 
     def assignment(self):
-        expr = self.or_expr()
+        expr = self.pipe()
         if self.match("=", "+=", "-=", "*=", "/="):
             op = self.tokens[self.pos - 1].type
             if not isinstance(expr, (Var, Index)):
                 self.error("invalid assignment target")
             value = self.assignment()
             return Assign(expr.line, expr, op, value)
+        return expr
+
+    def pipe(self):
+        expr = self.or_expr()
+        while self.match("|>"):
+            right = self.or_expr()
+            expr = Pipe(expr.line, expr, right)
         return expr
 
     def or_expr(self):
@@ -553,6 +665,9 @@ class Parser:
                 index = self.expression()
                 self.consume("]", "expected ']' after index")
                 expr = Index(expr.line, expr, index)
+            elif self.match("."):
+                name = self.consume("IDENT", "expected a property name after '.'")
+                expr = Index(expr.line, expr, Literal(name.line, name.value))
             else:
                 break
         return expr
@@ -632,10 +747,13 @@ class ContinueSignal(Exception):
 class Environment:
     def __init__(self, parent=None):
         self.values = {}
+        self.constants = set()
         self.parent = parent
 
-    def define(self, name, value):
+    def define(self, name, value, constant=False):
         self.values[name] = value
+        if constant:
+            self.constants.add(name)
 
     def get(self, name, line):
         env = self
@@ -649,6 +767,8 @@ class Environment:
         env = self
         while env is not None:
             if name in env.values:
+                if name in env.constants:
+                    raise SableRuntimeError(f"cannot assign to constant '{name}'", line)
                 env.values[name] = value
                 return
             env = env.parent
@@ -798,6 +918,8 @@ class Interpreter:
             raise SableRuntimeError("'break' outside a loop", signal.line)
         except ContinueSignal as signal:
             raise SableRuntimeError("'continue' outside a loop", signal.line)
+        except SableThrown as thrown:
+            raise SableRuntimeError("uncaught: " + to_display(thrown.value), thrown.line)
         return result
 
     def execute(self, stmt, env):
@@ -818,6 +940,44 @@ class Interpreter:
     def exec_Let(self, stmt, env):
         value = None if stmt.value is None else self.evaluate(stmt.value, env)
         env.define(stmt.name, value)
+        return None
+
+    def exec_Const(self, stmt, env):
+        value = self.evaluate(stmt.value, env)
+        env.define(stmt.name, value, constant=True)
+        return None
+
+    def exec_TryCatch(self, stmt, env):
+        try:
+            return self.execute(stmt.try_block, env)
+        except SableThrown as thrown:
+            error_env = Environment(env)
+            error_env.define(stmt.error_name, thrown.value)
+            return self.execute(stmt.catch_block, error_env)
+        except SableRuntimeError as error:
+            error_env = Environment(env)
+            info = {"message": error.message, "line": float(error.line)}
+            error_env.define(stmt.error_name, info)
+            return self.execute(stmt.catch_block, error_env)
+
+    def exec_Throw(self, stmt, env):
+        value = self.evaluate(stmt.value, env)
+        raise SableThrown(value, stmt.line)
+
+    def exec_Match(self, stmt, env):
+        value = self.evaluate(stmt.value, env)
+        for pattern, body in stmt.arms:
+            kind, data = pattern
+            arm_env = Environment(env)
+            if kind == "wild":
+                matched = True
+            elif kind == "bind":
+                arm_env.define(data, value)
+                matched = True
+            else:
+                matched = sable_equal(value, data)
+            if matched:
+                return self.execute(body, arm_env)
         return None
 
     def exec_FnDecl(self, stmt, env):
@@ -906,6 +1066,15 @@ class Interpreter:
         if not truthy(left):
             return left
         return self.evaluate(expr.right, env)
+
+    def eval_Pipe(self, expr, env):
+        value = self.evaluate(expr.left, env)
+        if isinstance(expr.right, Call):
+            function = self.evaluate(expr.right.callee, env)
+            args = [self.evaluate(arg, env) for arg in expr.right.args]
+            return self.call_value(function, [value] + args, expr.line)
+        function = self.evaluate(expr.right, env)
+        return self.call_value(function, [value], expr.line)
 
     def eval_Binary(self, expr, env):
         left = self.evaluate(expr.left, env)
@@ -1047,11 +1216,30 @@ class Interpreter:
         register("has", self.builtin_has, 2, 2)
         register("input", self.builtin_input, 0, 1)
         register("assert", self.builtin_assert, 1, 2)
-        register("sort", self.builtin_sort, 1, 1)
+        register("sort", self.builtin_sort, 1, 2)
         register("upper", self.builtin_upper, 1, 1)
         register("lower", self.builtin_lower, 1, 1)
         register("join", self.builtin_join, 2, 2)
         register("split", self.builtin_split, 2, 2)
+        register("map", self.builtin_map, 2, 2)
+        register("filter", self.builtin_filter, 2, 2)
+        register("reduce", self.builtin_reduce, 2, 3)
+        register("sum", self.builtin_sum, 1, 1)
+        register("abs", self.builtin_abs, 1, 1)
+        register("min", self.builtin_min, 1, None)
+        register("max", self.builtin_max, 1, None)
+        register("floor", self.builtin_floor, 1, 1)
+        register("ceil", self.builtin_ceil, 1, 1)
+        register("round", self.builtin_round, 1, 1)
+        register("sqrt", self.builtin_sqrt, 1, 1)
+        register("pow", self.builtin_pow, 2, 2)
+        register("contains", self.builtin_contains, 2, 2)
+        register("index_of", self.builtin_index_of, 2, 2)
+        register("slice", self.builtin_slice, 2, 3)
+        register("replace", self.builtin_replace, 3, 3)
+        register("trim", self.builtin_trim, 1, 1)
+        register("starts_with", self.builtin_starts_with, 2, 2)
+        register("ends_with", self.builtin_ends_with, 2, 2)
 
     def builtin_print(self, args, line):
         print(" ".join(to_display(value) for value in args))
@@ -1156,10 +1344,167 @@ class Interpreter:
         target = args[0]
         if not isinstance(target, list):
             raise SableRuntimeError("sort() expects a list", line)
-        try:
-            return sorted(target)
-        except TypeError:
-            raise SableRuntimeError("sort() cannot compare these values", line)
+        if len(args) == 1:
+            try:
+                return sorted(target)
+            except TypeError:
+                raise SableRuntimeError("sort() cannot compare these values", line)
+        comparator = args[1]
+
+        def compare(a, b):
+            result = self.call_value(comparator, [a, b], line)
+            if not is_number(result):
+                raise SableRuntimeError("sort comparator must return a number", line)
+            return -1 if result < 0 else (1 if result > 0 else 0)
+
+        return sorted(target, key=functools.cmp_to_key(compare))
+
+    def builtin_map(self, args, line):
+        items, function = args
+        if not isinstance(items, list):
+            raise SableRuntimeError("map() expects a list", line)
+        return [self.call_value(function, [item], line) for item in items]
+
+    def builtin_filter(self, args, line):
+        items, function = args
+        if not isinstance(items, list):
+            raise SableRuntimeError("filter() expects a list", line)
+        return [item for item in items if truthy(self.call_value(function, [item], line))]
+
+    def builtin_reduce(self, args, line):
+        items, function = args[0], args[1]
+        if not isinstance(items, list):
+            raise SableRuntimeError("reduce() expects a list", line)
+        if len(args) == 3:
+            accumulator = args[2]
+            start = 0
+        else:
+            if not items:
+                raise SableRuntimeError("reduce() of an empty list needs an initial value", line)
+            accumulator = items[0]
+            start = 1
+        for item in items[start:]:
+            accumulator = self.call_value(function, [accumulator, item], line)
+        return accumulator
+
+    def builtin_sum(self, args, line):
+        items = args[0]
+        if not isinstance(items, list):
+            raise SableRuntimeError("sum() expects a list", line)
+        total = 0.0
+        for item in items:
+            if not is_number(item):
+                raise SableRuntimeError("sum() expects a list of numbers", line)
+            total += item
+        return total
+
+    def builtin_abs(self, args, line):
+        if not is_number(args[0]):
+            raise SableRuntimeError("abs() expects a number", line)
+        return abs(args[0])
+
+    def builtin_min(self, args, line):
+        values = args[0] if len(args) == 1 and isinstance(args[0], list) else args
+        if not values:
+            raise SableRuntimeError("min() needs at least one value", line)
+        for value in values:
+            if not is_number(value):
+                raise SableRuntimeError("min() expects numbers", line)
+        return min(values)
+
+    def builtin_max(self, args, line):
+        values = args[0] if len(args) == 1 and isinstance(args[0], list) else args
+        if not values:
+            raise SableRuntimeError("max() needs at least one value", line)
+        for value in values:
+            if not is_number(value):
+                raise SableRuntimeError("max() expects numbers", line)
+        return max(values)
+
+    def builtin_floor(self, args, line):
+        if not is_number(args[0]):
+            raise SableRuntimeError("floor() expects a number", line)
+        return float(math.floor(args[0]))
+
+    def builtin_ceil(self, args, line):
+        if not is_number(args[0]):
+            raise SableRuntimeError("ceil() expects a number", line)
+        return float(math.ceil(args[0]))
+
+    def builtin_round(self, args, line):
+        if not is_number(args[0]):
+            raise SableRuntimeError("round() expects a number", line)
+        return float(round(args[0]))
+
+    def builtin_sqrt(self, args, line):
+        if not is_number(args[0]):
+            raise SableRuntimeError("sqrt() expects a number", line)
+        if args[0] < 0:
+            raise SableRuntimeError("sqrt() of a negative number", line)
+        return math.sqrt(args[0])
+
+    def builtin_pow(self, args, line):
+        if not (is_number(args[0]) and is_number(args[1])):
+            raise SableRuntimeError("pow() expects two numbers", line)
+        return math.pow(args[0], args[1])
+
+    def builtin_contains(self, args, line):
+        container, value = args
+        if isinstance(container, list):
+            return any(sable_equal(item, value) for item in container)
+        if isinstance(container, str):
+            if not isinstance(value, str):
+                raise SableRuntimeError("contains() on a string needs a string", line)
+            return value in container
+        if isinstance(container, dict):
+            if not isinstance(value, str):
+                raise SableRuntimeError("map keys must be strings", line)
+            return value in container
+        raise SableRuntimeError("contains() expects a list, string, or map", line)
+
+    def builtin_index_of(self, args, line):
+        container, value = args
+        if isinstance(container, list):
+            for index, item in enumerate(container):
+                if sable_equal(item, value):
+                    return float(index)
+            return -1.0
+        if isinstance(container, str):
+            if not isinstance(value, str):
+                raise SableRuntimeError("index_of() on a string needs a string", line)
+            return float(container.find(value))
+        raise SableRuntimeError("index_of() expects a list or string", line)
+
+    def builtin_slice(self, args, line):
+        container = args[0]
+        start = self.require_int(args[1], line, "slice start")
+        end = None if len(args) == 2 else self.require_int(args[2], line, "slice end")
+        if isinstance(container, (list, str)):
+            return container[start:end]
+        raise SableRuntimeError("slice() expects a list or string", line)
+
+    def builtin_replace(self, args, line):
+        text, old, new = args
+        if not (isinstance(text, str) and isinstance(old, str) and isinstance(new, str)):
+            raise SableRuntimeError("replace() expects three strings", line)
+        return text.replace(old, new)
+
+    def builtin_trim(self, args, line):
+        if not isinstance(args[0], str):
+            raise SableRuntimeError("trim() expects a string", line)
+        return args[0].strip()
+
+    def builtin_starts_with(self, args, line):
+        text, prefix = args
+        if not (isinstance(text, str) and isinstance(prefix, str)):
+            raise SableRuntimeError("starts_with() expects two strings", line)
+        return text.startswith(prefix)
+
+    def builtin_ends_with(self, args, line):
+        text, suffix = args
+        if not (isinstance(text, str) and isinstance(suffix, str)):
+            raise SableRuntimeError("ends_with() expects two strings", line)
+        return text.endswith(suffix)
 
     def builtin_upper(self, args, line):
         if not isinstance(args[0], str):

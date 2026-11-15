@@ -1,0 +1,20 @@
+fn safe_divide(a, b) {
+    try {
+        if b == 0 {
+            throw "cannot divide by zero";
+        }
+        return a / b;
+    } catch err {
+        print("error: " + str(err));
+        return nil;
+    }
+}
+
+print(safe_divide(10, 2));
+print(safe_divide(10, 0));
+
+try {
+    print(1 / 0);
+} catch err {
+    print("math failed: " + err.message);
+}

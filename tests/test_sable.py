@@ -128,6 +128,107 @@ class TestCollections(unittest.TestCase):
         self.assertEqual(out, "1\n")
 
 
+class TestAdvanced(unittest.TestCase):
+    def test_dot_access(self):
+        out, err = run('let m = {"name": "ana", "age": 15}; print(m.name); m.age = m.age + 1; m.age += 1; print(m.age);')
+        self.assertIsNone(err)
+        self.assertEqual(out, "ana\n17\n")
+
+    def test_const(self):
+        out, err = run("const x = 1; print(x); x = 2;")
+        self.assertIsNotNone(err)
+        self.assertIn("constant 'x'", err.message)
+
+    def test_try_throw(self):
+        out, err = run('try { throw "boom"; } catch e { print(e); }')
+        self.assertIsNone(err)
+        self.assertEqual(out, "boom\n")
+
+    def test_try_runtime_error(self):
+        out, err = run("try { print(1 / 0); } catch e { print(e.message); }")
+        self.assertIsNone(err)
+        self.assertEqual(out, "division by zero\n")
+
+    def test_try_does_not_catch_return(self):
+        out, err = run("fn f() { try { return 1; } catch e { return 2; } } print(f());")
+        self.assertIsNone(err)
+        self.assertEqual(out, "1\n")
+
+    def test_try_does_not_catch_break(self):
+        out, err = run('for i in [1] { try { break; } catch e { print("caught"); } } print("done");')
+        self.assertIsNone(err)
+        self.assertEqual(out, "done\n")
+
+    def test_uncaught_throw(self):
+        out, err = run('throw "oops";')
+        self.assertIsNotNone(err)
+        self.assertIn("uncaught: oops", err.message)
+
+    def test_match_binding(self):
+        source = 'fn describe(x) { match x { 1 => return "one"; 2 => return "two"; n => return "many: " + str(n); } } print(describe(1)); print(describe(2)); print(describe(9));'
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "one\ntwo\nmany: 9\n")
+
+    def test_match_wildcard(self):
+        out, err = run('match 5 { 1 => print("one"); _ => print("other"); }')
+        self.assertIsNone(err)
+        self.assertEqual(out, "other\n")
+
+    def test_match_block(self):
+        out, err = run('match 2 { 2 => { print("two"); print("!"); } _ => print("no"); }')
+        self.assertIsNone(err)
+        self.assertEqual(out, "two\n!\n")
+
+    def test_pipe_into_call(self):
+        source = 'let nums = [1, 2, 3, 4]; print(nums |> filter(fn(n) { return n % 2 == 0; }) |> map(fn(n) { return n * 10; }));'
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "[20, 40]\n")
+
+    def test_pipe(self):
+        out, err = run("fn double(n) { return n * 2; } print(5 |> double); print(5 |> double |> double); print(1 + 2 |> double);")
+        self.assertIsNone(err)
+        self.assertEqual(out, "10\n20\n6\n")
+
+    def test_higher_order_builtins(self):
+        source = ('print(map([1, 2, 3], fn(n) { return n * 2; }));'
+                  'print(filter([1, 2, 3, 4], fn(n) { return n % 2 == 0; }));'
+                  'print(reduce([1, 2, 3], fn(a, b) { return a + b; }));'
+                  'print(reduce([1, 2, 3], fn(a, b) { return a + b; }, 10));'
+                  'print(sum([1, 2, 3]));')
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "[2, 4, 6]\n[2, 4]\n6\n16\n6\n")
+
+    def test_math_builtins(self):
+        source = ('print(abs(-5)); print(min([3, 1, 2])); print(max([3, 1, 2]));'
+                  'print(min(3, 1, 2)); print(max(3, 1, 2));'
+                  'print(floor(3.7)); print(ceil(3.2)); print(round(3.5));'
+                  'print(sqrt(9)); print(pow(2, 3));')
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "5\n1\n3\n1\n3\n3\n4\n4\n3\n8\n")
+
+    def test_collection_builtins(self):
+        source = ('print(contains([1, 2], 2)); print(contains("hello", "ell"));'
+                  'print(contains({"a": 1}, "a"));'
+                  'print(index_of([1, 2, 3], 2)); print(index_of("hello", "l"));'
+                  'print(slice([1, 2, 3, 4], 1, 3)); print(slice("hello", 1, 3));'
+                  'print(replace("a-b-c", "-", "+")); print(trim("  hi  "));'
+                  'print(starts_with("hello", "he")); print(ends_with("hello", "lo"));')
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "true\ntrue\ntrue\n1\n2\n[2, 3]\nel\na+b+c\nhi\ntrue\ntrue\n")
+
+    def test_sort_comparator(self):
+        source = ('print(sort([3, 1, 2], fn(a, b) { return a - b; }));'
+                  'print(sort([3, 1, 2], fn(a, b) { return b - a; }));')
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "[1, 2, 3]\n[3, 2, 1]\n")
+
+
 class TestRepl(unittest.TestCase):
     def test_state_persists(self):
         inputs = iter(["let x = 2;", "x * 3;", "fn f(n) { return n + 1; }", "f(41);"])

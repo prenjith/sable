@@ -1,0 +1,18 @@
+fn describe(n) {
+    match n {
+        1 => return "one";
+        2 => return "two";
+        _ => return "many";
+    }
+}
+
+for n in [1, 2, 5] {
+    print(describe(n));
+}
+
+let word = "hello";
+match word {
+    "hi" => print("greeting");
+    "hello" => print("also a greeting");
+    _ => print("something else");
+}
