@@ -1,0 +1,30 @@
+{
+  "name": "sable-language",
+  "displayName": "Sable",
+  "description": "Syntax highlighting for the Sable programming language",
+  "version": "0.2.0",
+  "publisher": "prenjith",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "sable",
+        "aliases": ["Sable", "sable"],
+        "extensions": [".sable"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sable",
+        "scopeName": "source.sable",
+        "path": "./syntaxes/sable.tmLanguage.json"
+      }
+    ]
+  }
+}

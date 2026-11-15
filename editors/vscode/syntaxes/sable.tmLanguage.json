@@ -1,0 +1,60 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Sable",
+  "scopeName": "source.sable",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#functions" },
+    { "include": "#builtins" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.sable", "match": "//.*$" },
+        { "name": "comment.block.sable", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.sable",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.sable", "match": "\\\\." }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.sable",
+      "match": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b"
+    },
+    "keywords": {
+      "name": "keyword.control.sable",
+      "match": "\\b(let|const|fn|if|else|while|for|in|return|break|continue|try|catch|throw|match|and|or|not)\\b"
+    },
+    "constants": {
+      "name": "constant.language.sable",
+      "match": "\\b(true|false|nil)\\b"
+    },
+    "functions": {
+      "name": "entity.name.function.sable",
+      "match": "(?<=\\bfn\\s+)[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "builtins": {
+      "name": "support.function.builtin.sable",
+      "match": "\\b(print|len|str|num|type|range|push|pop|keys|has|input|assert|sort|upper|lower|join|split|map|filter|reduce|sum|abs|min|max|floor|ceil|round|sqrt|pow|contains|index_of|slice|replace|trim|starts_with|ends_with)\\b"
+    },
+    "operators": {
+      "name": "keyword.operator.sable",
+      "match": "(==|!=|<=|>=|\\+=|-=|\\*=|/=|=>|\\|>|[-+*/%=<>])"
+    },
+    "punctuation": {
+      "name": "punctuation.sable",
+      "match": "[(){}\\[\\],:;.]"
+    }
+  }
+}
