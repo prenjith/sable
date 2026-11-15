@@ -1,0 +1,11 @@
+fn some(value) {
+    return {"some": true, "value": value};
+}
+
+fn none() {
+    return {"some": false};
+}
+
+fn is_some(option) {
+    return option.some;
+}

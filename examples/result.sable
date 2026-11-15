@@ -1,0 +1,14 @@
+import "../stdlib/result.sable";
+
+let good = ok(42);
+let bad = err("something went wrong");
+
+print(is_ok(good));
+print(is_ok(bad));
+print(unwrap(good));
+
+try {
+    print(unwrap(bad));
+} catch e {
+    print("caught: " + str(e));
+}

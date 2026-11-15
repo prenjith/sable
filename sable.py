@@ -2,13 +2,14 @@
 """Sable: a small scripting language implemented as a tree-walking interpreter."""
 
 import sys
+import os
 import math
 import bisect
 import functools
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-VERSION = "0.1.0"
+VERSION = "0.3.0"
 
 sys.setrecursionlimit(10000)
 
@@ -21,6 +22,8 @@ class SableError(Exception):
         self.message = message
         self.line = line
         self.col = col
+        self.source = None
+        self.filename = None
 
 
 class SableSyntaxError(SableError):
@@ -39,7 +42,7 @@ class SableThrown(Exception):
 
 KEYWORDS = {
     "let", "const", "fn", "if", "else", "while", "for", "in", "return",
-    "break", "continue", "try", "catch", "throw", "match",
+    "break", "continue", "try", "catch", "throw", "match", "import",
     "true", "false", "nil", "and", "or", "not",
 }
 
@@ -202,6 +205,7 @@ class Let:
     line: int
     name: str
     value: Any
+    type_name: Any = None
 
 
 @dataclass
@@ -210,6 +214,8 @@ class FnDecl:
     name: str
     params: List[str]
     body: Any
+    param_types: Any = None
+    return_type: Any = None
 
 
 @dataclass
@@ -252,10 +258,17 @@ class Continue:
 
 
 @dataclass
+class Import:
+    line: int
+    path: str
+
+
+@dataclass
 class Const:
     line: int
     name: str
     value: Any
+    type_name: Any = None
 
 
 @dataclass
@@ -372,6 +385,8 @@ class FnExpr:
     line: int
     params: List[str]
     body: Any
+    param_types: Any = None
+    return_type: Any = None
 
 
 class Parser:
@@ -431,6 +446,8 @@ class Parser:
             return self.throw_statement()
         if self.check("match"):
             return self.match_statement()
+        if self.check("import"):
+            return self.import_statement()
         if (self.check("fn") and self.peek().type == "IDENT"
                 and self.peek(2).type == "("):
             return self.fn_declaration()
@@ -459,30 +476,45 @@ class Parser:
     def let_statement(self):
         tok = self.advance()
         name = self.consume("IDENT", "expected a variable name after 'let'")
+        type_name = None
+        if self.match(":"):
+            type_name = self.type_name()
         value = None
         if self.match("="):
             value = self.expression()
         self.consume(";", "expected ';' after let")
-        return Let(tok.line, name.value, value)
+        return Let(tok.line, name.value, value, type_name)
 
     def fn_declaration(self):
         tok = self.advance()
         name = self.consume("IDENT", "expected a function name")
-        params = self.parameters()
+        params, param_types = self.parameters()
+        return_type = None
+        if self.match(":"):
+            return_type = self.type_name()
         body = self.block()
-        return FnDecl(tok.line, name.value, params, body)
+        return FnDecl(tok.line, name.value, params, body, param_types, return_type)
 
     def parameters(self):
         self.consume("(", "expected '(' before parameters")
         params = []
+        param_types = []
         if not self.check(")"):
             while True:
                 p = self.consume("IDENT", "expected a parameter name")
                 params.append(p.value)
+                if self.match(":"):
+                    param_types.append(self.type_name())
+                else:
+                    param_types.append(None)
                 if not self.match(","):
                     break
         self.consume(")", "expected ')' after parameters")
-        return params
+        return params, param_types
+
+    def type_name(self):
+        tok = self.consume("IDENT", "expected a type name")
+        return tok.value
 
     def if_statement(self):
         tok = self.advance()
@@ -518,13 +550,22 @@ class Parser:
         self.consume(";", "expected ';' after return")
         return Return(tok.line, value)
 
+    def import_statement(self):
+        tok = self.advance()
+        path = self.consume("STRING", "expected a file path after 'import'")
+        self.consume(";", "expected ';' after import")
+        return Import(tok.line, path.value)
+
     def const_statement(self):
         tok = self.advance()
         name = self.consume("IDENT", "expected a name after 'const'")
+        type_name = None
+        if self.match(":"):
+            type_name = self.type_name()
         self.consume("=", "const declarations need a value")
         value = self.expression()
         self.consume(";", "expected ';' after const")
-        return Const(tok.line, name.value, value)
+        return Const(tok.line, name.value, value, type_name)
 
     def try_statement(self):
         tok = self.advance()
@@ -722,9 +763,12 @@ class Parser:
             self.consume("}", "expected '}' after map")
             return MapLit(tok.line, pairs)
         if self.match("fn"):
-            params = self.parameters()
+            params, param_types = self.parameters()
+            return_type = None
+            if self.match(":"):
+                return_type = self.type_name()
             body = self.block()
-            return FnExpr(tok.line, params, body)
+            return FnExpr(tok.line, params, body, param_types, return_type)
         self.error(f"unexpected token {tok.type!r}")
 
 
@@ -776,11 +820,13 @@ class Environment:
 
 
 class Function:
-    def __init__(self, name, params, body, closure):
+    def __init__(self, name, params, body, closure, param_types=None, return_type=None):
         self.name = name
         self.params = params
         self.body = body
         self.closure = closure
+        self.param_types = param_types
+        self.return_type = return_type
 
     def __repr__(self):
         return f"<fn {self.name or 'anonymous'}>"
@@ -795,6 +841,55 @@ class Builtin:
 
     def __repr__(self):
         return f"<builtin {self.name}>"
+
+
+class SableMap:
+    def __init__(self):
+        self.entries = {}
+
+    @staticmethod
+    def normalize(key):
+        if key is None:
+            return ("nil",)
+        if isinstance(key, bool):
+            return ("bool", key)
+        if isinstance(key, float):
+            return ("num", key)
+        if isinstance(key, str):
+            return ("str", key)
+        raise SableRuntimeError("map keys must be strings, numbers, booleans, or nil")
+
+    def set(self, key, value):
+        self.entries[self.normalize(key)] = (key, value)
+
+    def get(self, key):
+        entry = self.entries.get(self.normalize(key))
+        return entry[1] if entry is not None else None
+
+    def has(self, key):
+        return self.normalize(key) in self.entries
+
+    def keys(self):
+        return [entry[0] for entry in self.entries.values()]
+
+    def items(self):
+        return [(entry[0], entry[1]) for entry in self.entries.values()]
+
+    def __len__(self):
+        return len(self.entries)
+
+    def __eq__(self, other):
+        if not isinstance(other, SableMap):
+            return False
+        if len(self) != len(other):
+            return False
+        for key, value in self.items():
+            if not other.has(key) or not sable_equal(value, other.get(key)):
+                return False
+        return True
+
+    def __repr__(self):
+        return f"SableMap({self.items()!r})"
 
 
 def is_number(value):
@@ -834,7 +929,7 @@ def to_display(value):
         return value
     if isinstance(value, list):
         return "[" + ", ".join(repr_value(v) for v in value) + "]"
-    if isinstance(value, dict):
+    if isinstance(value, SableMap):
         parts = [repr_value(k) + ": " + repr_value(v) for k, v in value.items()]
         return "{" + ", ".join(parts) + "}"
     if isinstance(value, (Function, Builtin)):
@@ -853,10 +948,8 @@ def sable_equal(a, b):
         return a == b
     if isinstance(a, list) and isinstance(b, list):
         return len(a) == len(b) and all(sable_equal(x, y) for x, y in zip(a, b))
-    if isinstance(a, dict) and isinstance(b, dict):
-        if set(a.keys()) != set(b.keys()):
-            return False
-        return all(sable_equal(a[k], b[k]) for k in a)
+    if isinstance(a, SableMap) and isinstance(b, SableMap):
+        return a == b
     return a is b
 
 
@@ -901,9 +994,303 @@ def apply_binary(op, left, right, line):
     raise SableRuntimeError(f"unknown operator '{op}'", line)
 
 
-class Interpreter:
+class SableTypeError(SableError):
+    kind = "TypeError"
+
+
+class FunctionType:
+    def __init__(self, param_types, return_type):
+        self.param_types = param_types
+        self.return_type = return_type
+
+
+class Checker:
     def __init__(self):
+        self.scopes = [{}]
+        self.function_scopes = [{}]
+        self.return_types = []
+
+    def check(self, program):
+        for stmt in program.statements:
+            self.check_stmt(stmt)
+
+    def push(self):
+        self.scopes.append({})
+        self.function_scopes.append({})
+
+    def pop(self):
+        self.scopes.pop()
+        self.function_scopes.pop()
+
+    def declare(self, name, type_name):
+        self.scopes[-1][name] = type_name
+
+    def lookup(self, name):
+        for scope in reversed(self.scopes):
+            if name in scope:
+                return scope[name]
+        return "any"
+
+    def declare_function(self, name, signature):
+        self.function_scopes[-1][name] = signature
+        self.scopes[-1][name] = "function"
+
+    def lookup_function(self, name):
+        for scope in reversed(self.function_scopes):
+            if name in scope:
+                return scope[name]
+        return None
+
+    def compatible(self, expected, actual):
+        if expected == "any" or actual == "any":
+            return True
+        return expected == actual
+
+    def expect(self, expected, actual, line, context):
+        if not self.compatible(expected, actual):
+            raise SableTypeError(f"{context}: expected {expected}, got {actual}", line)
+
+    def check_stmt(self, stmt):
+        getattr(self, "check_" + type(stmt).__name__)(stmt)
+
+    def check_Let(self, stmt):
+        actual = "nil" if stmt.value is None else self.infer(stmt.value)
+        declared = stmt.type_name or "any"
+        if stmt.type_name:
+            self.expect(declared, actual, stmt.line, f"cannot initialize '{stmt.name}'")
+        self.declare(stmt.name, declared)
+
+    def check_Const(self, stmt):
+        actual = self.infer(stmt.value)
+        declared = stmt.type_name or "any"
+        if stmt.type_name:
+            self.expect(declared, actual, stmt.line, f"cannot initialize '{stmt.name}'")
+        self.declare(stmt.name, declared)
+
+    def check_FnDecl(self, stmt):
+        param_types = [t or "any" for t in (stmt.param_types or [None] * len(stmt.params))]
+        return_type = stmt.return_type or "any"
+        self.declare_function(stmt.name, FunctionType(param_types, return_type))
+        self.push()
+        for name, type_name in zip(stmt.params, param_types):
+            self.declare(name, type_name)
+        self.return_types.append(return_type)
+        self.check_stmt(stmt.body)
+        self.return_types.pop()
+        self.pop()
+
+    def check_If(self, stmt):
+        self.infer(stmt.cond)
+        self.push()
+        self.check_stmt(stmt.then_branch)
+        self.pop()
+        if stmt.else_branch is not None:
+            self.push()
+            self.check_stmt(stmt.else_branch)
+            self.pop()
+
+    def check_While(self, stmt):
+        self.infer(stmt.cond)
+        self.push()
+        self.check_stmt(stmt.body)
+        self.pop()
+
+    def check_For(self, stmt):
+        self.infer(stmt.iterable)
+        self.push()
+        self.declare(stmt.var, "any")
+        self.check_stmt(stmt.body)
+        self.pop()
+
+    def check_Return(self, stmt):
+        actual = "nil" if stmt.value is None else self.infer(stmt.value)
+        expected = self.return_types[-1] if self.return_types else "any"
+        if expected != "any":
+            self.expect(expected, actual, stmt.line, "return value")
+
+    def check_Break(self, stmt):
+        pass
+
+    def check_Continue(self, stmt):
+        pass
+
+    def check_TryCatch(self, stmt):
+        self.push()
+        self.check_stmt(stmt.try_block)
+        self.pop()
+        self.push()
+        self.declare(stmt.error_name, "any")
+        self.check_stmt(stmt.catch_block)
+        self.pop()
+
+    def check_Throw(self, stmt):
+        self.infer(stmt.value)
+
+    def check_Match(self, stmt):
+        self.infer(stmt.value)
+        for pattern, body in stmt.arms:
+            self.push()
+            kind, data = pattern
+            if kind == "bind":
+                self.declare(data, "any")
+            self.check_stmt(body)
+            self.pop()
+
+    def check_Block(self, stmt):
+        self.push()
+        for child in stmt.statements:
+            self.check_stmt(child)
+        self.pop()
+
+    def check_ExprStmt(self, stmt):
+        self.infer(stmt.expr)
+
+    def check_Import(self, stmt):
+        pass
+
+    def infer(self, expr):
+        return getattr(self, "infer_" + type(expr).__name__)(expr)
+
+    def infer_Literal(self, expr):
+        value = expr.value
+        if value is None:
+            return "nil"
+        if isinstance(value, bool):
+            return "bool"
+        if isinstance(value, float):
+            return "number"
+        if isinstance(value, str):
+            return "string"
+        return "any"
+
+    def infer_Var(self, expr):
+        return self.lookup(expr.name)
+
+    def infer_ListLit(self, expr):
+        for element in expr.elements:
+            self.infer(element)
+        return "list"
+
+    def infer_MapLit(self, expr):
+        for key, value in expr.pairs:
+            self.infer(key)
+            self.infer(value)
+        return "map"
+
+    def infer_FnExpr(self, expr):
+        param_types = [t or "any" for t in (expr.param_types or [None] * len(expr.params))]
+        return_type = expr.return_type or "any"
+        self.push()
+        for name, type_name in zip(expr.params, param_types):
+            self.declare(name, type_name)
+        self.return_types.append(return_type)
+        self.check_stmt(expr.body)
+        self.return_types.pop()
+        self.pop()
+        return "function"
+
+    def infer_Unary(self, expr):
+        operand = self.infer(expr.operand)
+        if expr.op == "not":
+            return "bool"
+        self.expect("number", operand, expr.line, "unary '-'")
+        return "number"
+
+    def infer_Binary(self, expr):
+        left = self.infer(expr.left)
+        right = self.infer(expr.right)
+        op = expr.op
+        if op == "+":
+            if left == "any" or right == "any":
+                return "any"
+            if left == "number" and right == "number":
+                return "number"
+            if left == "string" and right == "string":
+                return "string"
+            if left == "list" and right == "list":
+                return "list"
+            raise SableTypeError(f"cannot add {left} and {right}", expr.line)
+        if op in ("-", "*", "/", "%"):
+            self.expect("number", left, expr.line, f"operator '{op}'")
+            self.expect("number", right, expr.line, f"operator '{op}'")
+            return "number"
+        if op in ("<", "<=", ">", ">="):
+            if left == "any" or right == "any":
+                return "bool"
+            if left == right and left in ("number", "string"):
+                return "bool"
+            raise SableTypeError(f"cannot compare {left} and {right}", expr.line)
+        if op in ("==", "!="):
+            return "bool"
+        return "any"
+
+    def infer_Logical(self, expr):
+        self.infer(expr.left)
+        self.infer(expr.right)
+        return "any"
+
+    def infer_Assign(self, expr):
+        actual = self.infer(expr.value)
+        target = expr.target
+        if isinstance(target, Var):
+            expected = self.lookup(target.name)
+            if expr.op == "=" and expected != "any":
+                self.expect(expected, actual, expr.line, f"cannot assign to '{target.name}'")
+            return expected if expected != "any" else actual
+        if isinstance(target, Index):
+            self.infer(target.obj)
+            self.infer(target.index)
+            return actual
+        return "any"
+
+    def infer_Call(self, expr):
+        if isinstance(expr.callee, Var):
+            signature = self.lookup_function(expr.callee.name)
+            if signature is not None:
+                if len(expr.args) != len(signature.param_types):
+                    raise SableTypeError(
+                        f"{expr.callee.name}() expects {len(signature.param_types)} argument(s), got {len(expr.args)}",
+                        expr.line)
+                for argument, expected in zip(expr.args, signature.param_types):
+                    self.expect(expected, self.infer(argument), expr.line,
+                                f"argument to {expr.callee.name}()")
+                return signature.return_type
+        self.infer(expr.callee)
+        for argument in expr.args:
+            self.infer(argument)
+        return "any"
+
+    def infer_Index(self, expr):
+        obj = self.infer(expr.obj)
+        self.infer(expr.index)
+        if obj in ("list", "string", "map", "any"):
+            return "any"
+        raise SableTypeError(f"cannot index a {obj}", expr.line)
+
+    def infer_Pipe(self, expr):
+        left = self.infer(expr.left)
+        if isinstance(expr.right, Call) and isinstance(expr.right.callee, Var):
+            signature = self.lookup_function(expr.right.callee.name)
+            if signature is not None:
+                if 1 + len(expr.right.args) != len(signature.param_types):
+                    raise SableTypeError(
+                        f"{expr.right.callee.name}() expects {len(signature.param_types)} argument(s), got {1 + len(expr.right.args)}",
+                        expr.line)
+                self.expect(signature.param_types[0], left, expr.line,
+                            f"argument to {expr.right.callee.name}()")
+                for argument, expected in zip(expr.right.args, signature.param_types[1:]):
+                    self.expect(expected, self.infer(argument), expr.line,
+                                f"argument to {expr.right.callee.name}()")
+                return signature.return_type
+        self.infer(expr.right)
+        return "any"
+
+
+class Interpreter:
+    def __init__(self, base_dir="."):
         self.globals = Environment()
+        self.base_dir = base_dir
+        self.loaded_modules = set()
         self.depth = 0
         self.install_builtins()
 
@@ -942,6 +1329,32 @@ class Interpreter:
         env.define(stmt.name, value)
         return None
 
+    def exec_Import(self, stmt, env):
+        path = os.path.abspath(os.path.join(self.base_dir, stmt.path))
+        if path in self.loaded_modules:
+            return None
+        self.loaded_modules.add(path)
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                source = handle.read()
+        except OSError as error:
+            raise SableRuntimeError(f"cannot import {stmt.path!r}: {error}", stmt.line)
+        try:
+            program = parse(source)
+            Checker().check(program)
+            previous = self.base_dir
+            self.base_dir = os.path.dirname(path)
+            try:
+                for child in program.statements:
+                    self.execute(child, self.globals)
+            finally:
+                self.base_dir = previous
+        except SableError as error:
+            error.source = source
+            error.filename = path
+            raise
+        return None
+
     def exec_Const(self, stmt, env):
         value = self.evaluate(stmt.value, env)
         env.define(stmt.name, value, constant=True)
@@ -956,7 +1369,9 @@ class Interpreter:
             return self.execute(stmt.catch_block, error_env)
         except SableRuntimeError as error:
             error_env = Environment(env)
-            info = {"message": error.message, "line": float(error.line)}
+            info = SableMap()
+            info.set("message", error.message)
+            info.set("line", float(error.line))
             error_env.define(stmt.error_name, info)
             return self.execute(stmt.catch_block, error_env)
 
@@ -981,7 +1396,8 @@ class Interpreter:
         return None
 
     def exec_FnDecl(self, stmt, env):
-        env.define(stmt.name, Function(stmt.name, stmt.params, stmt.body, env))
+        env.define(stmt.name, Function(stmt.name, stmt.params, stmt.body, env,
+                                        stmt.param_types, stmt.return_type))
         return None
 
     def exec_If(self, stmt, env):
@@ -1103,16 +1519,15 @@ class Interpreter:
         return [self.evaluate(item, env) for item in expr.elements]
 
     def eval_MapLit(self, expr, env):
-        result = {}
+        result = SableMap()
         for key_expr, value_expr in expr.pairs:
             key = self.evaluate(key_expr, env)
-            if not isinstance(key, str):
-                raise SableRuntimeError("map keys must be strings", expr.line)
-            result[key] = self.evaluate(value_expr, env)
+            result.set(key, self.evaluate(value_expr, env))
         return result
 
     def eval_FnExpr(self, expr, env):
-        return Function(None, expr.params, expr.body, env)
+        return Function(None, expr.params, expr.body, env,
+                        expr.param_types, expr.return_type)
 
     def call_value(self, callee, args, line):
         if isinstance(callee, Builtin):
@@ -1152,8 +1567,8 @@ class Interpreter:
             return list(value)
         if isinstance(value, str):
             return list(value)
-        if isinstance(value, dict):
-            return list(value.keys())
+        if isinstance(value, SableMap):
+            return value.keys()
         raise SableRuntimeError("value is not iterable", line)
 
     def require_int(self, value, line, what):
@@ -1176,9 +1591,7 @@ class Interpreter:
             if i < 0 or i >= len(obj):
                 raise SableRuntimeError("string index out of range", line)
             return obj[i]
-        if isinstance(obj, dict):
-            if not isinstance(index, str):
-                raise SableRuntimeError("map keys must be strings", line)
+        if isinstance(obj, SableMap):
             return obj.get(index)
         raise SableRuntimeError("value is not indexable", line)
 
@@ -1191,10 +1604,8 @@ class Interpreter:
                 raise SableRuntimeError("list index out of range", line)
             obj[i] = value
             return
-        if isinstance(obj, dict):
-            if not isinstance(index, str):
-                raise SableRuntimeError("map keys must be strings", line)
-            obj[index] = value
+        if isinstance(obj, SableMap):
+            obj.set(index, value)
             return
         if isinstance(obj, str):
             raise SableRuntimeError("strings are immutable", line)
@@ -1247,7 +1658,7 @@ class Interpreter:
 
     def builtin_len(self, args, line):
         value = args[0]
-        if isinstance(value, (str, list, dict)):
+        if isinstance(value, (str, list, SableMap)):
             return float(len(value))
         raise SableRuntimeError("len() expects a string, list, or map", line)
 
@@ -1277,7 +1688,7 @@ class Interpreter:
             return "string"
         if isinstance(value, list):
             return "list"
-        if isinstance(value, dict):
+        if isinstance(value, SableMap):
             return "map"
         if isinstance(value, Function):
             return "function"
@@ -1316,17 +1727,15 @@ class Interpreter:
 
     def builtin_keys(self, args, line):
         target = args[0]
-        if not isinstance(target, dict):
+        if not isinstance(target, SableMap):
             raise SableRuntimeError("keys() expects a map", line)
-        return list(target.keys())
+        return target.keys()
 
     def builtin_has(self, args, line):
         target, key = args
-        if not isinstance(target, dict):
+        if not isinstance(target, SableMap):
             raise SableRuntimeError("has() expects a map", line)
-        if not isinstance(key, str):
-            raise SableRuntimeError("map keys must be strings", line)
-        return key in target
+        return target.has(key)
 
     def builtin_input(self, args, line):
         prompt = args[0] if args else ""
@@ -1456,10 +1865,8 @@ class Interpreter:
             if not isinstance(value, str):
                 raise SableRuntimeError("contains() on a string needs a string", line)
             return value in container
-        if isinstance(container, dict):
-            if not isinstance(value, str):
-                raise SableRuntimeError("map keys must be strings", line)
-            return value in container
+        if isinstance(container, SableMap):
+            return container.has(value)
         raise SableRuntimeError("contains() expects a list, string, or map", line)
 
     def builtin_index_of(self, args, line):
@@ -1542,17 +1949,23 @@ def parse(source):
     return Parser(lex(source), source).parse()
 
 
-def interpret(program):
-    return Interpreter().run(program)
+def interpret(program, base_dir="."):
+    return Interpreter(base_dir).run(program)
 
 
-def run_source(source):
-    return interpret(parse(source))
+def run_source(source, base_dir="."):
+    program = parse(source)
+    Checker().check(program)
+    return interpret(program, base_dir)
 
 
 def format_error(error, source):
+    source = error.source or source
     lines = source.splitlines() or [""]
-    text = f"{error.kind}: {error.message}"
+    if error.filename:
+        text = f"{error.kind} in {error.filename}: {error.message}"
+    else:
+        text = f"{error.kind}: {error.message}"
     if 1 <= error.line <= len(lines):
         text += f"\n  line {error.line}: {lines[error.line - 1]}"
         text += "\n  " + " " * max(0, error.col - 1) + "^"
@@ -1601,7 +2014,7 @@ def read_source(path):
 
 def repl():
     print(f"Sable {VERSION}  (Ctrl-D to quit)")
-    interpreter = Interpreter()
+    interpreter = Interpreter(os.getcwd())
     buffer = ""
     while True:
         prompt = "sable> " if not buffer else "  ... "
@@ -1619,6 +2032,7 @@ def repl():
             continue
         try:
             program = parse(buffer)
+            Checker().check(program)
             value = interpreter.run(program)
             if value is not None:
                 print(to_display(value))
@@ -1643,7 +2057,24 @@ def main(argv=None):
         print("  sable file.sable   run a program")
         print("  sable --tokens f   print the token stream")
         print("  sable --ast f      print the parsed AST")
+        print("  sable --check f    check type annotations")
         print("  sable -v           print the version")
+        return 0
+    if arg == "--check":
+        if len(argv) < 3:
+            print("--check needs a file", file=sys.stderr)
+            return 1
+        try:
+            source = read_source(argv[2])
+        except OSError as error:
+            print(f"sable: {error}", file=sys.stderr)
+            return 1
+        try:
+            Checker().check(parse(source))
+        except SableError as error:
+            print(format_error(error, source), file=sys.stderr)
+            return 1
+        print("ok")
         return 0
     if arg in ("--tokens", "--ast"):
         if len(argv) < 3:
@@ -1670,8 +2101,9 @@ def main(argv=None):
     except OSError as error:
         print(f"sable: {error}", file=sys.stderr)
         return 1
+    base_dir = os.path.dirname(os.path.abspath(arg))
     try:
-        run_source(source)
+        run_source(source, base_dir)
     except SableError as error:
         print(format_error(error, source), file=sys.stderr)
         return 1

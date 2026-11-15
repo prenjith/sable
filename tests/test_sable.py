@@ -2,6 +2,7 @@ import contextlib
 import io
 import os
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -227,6 +228,98 @@ class TestAdvanced(unittest.TestCase):
         out, err = run(source)
         self.assertIsNone(err)
         self.assertEqual(out, "[1, 2, 3]\n[3, 2, 1]\n")
+
+
+class TestTypes(unittest.TestCase):
+    def test_annotations_run(self):
+        source = 'let x: number = 1; const name: string = "ana"; fn add(a: number, b: number): number { return a + b; } print(add(x, 2)); print(name);'
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "3\nana\n")
+
+    def test_bad_initializer(self):
+        out, err = run('let x: number = "a";')
+        self.assertIsNotNone(err)
+        self.assertIn("cannot initialize 'x'", err.message)
+
+    def test_bad_assignment(self):
+        out, err = run('let x: number = 1; x = "a";')
+        self.assertIsNotNone(err)
+        self.assertIn("cannot assign to 'x'", err.message)
+
+    def test_bad_return(self):
+        out, err = run('fn f(): number { return "a"; } print(f());')
+        self.assertIsNotNone(err)
+        self.assertIn("return value", err.message)
+
+    def test_bad_argument(self):
+        out, err = run('fn f(a: number) { return a; } f("a");')
+        self.assertIsNotNone(err)
+        self.assertIn("argument to f()", err.message)
+
+    def test_bad_operator(self):
+        out, err = run('let x: number = 1; print(x + "a");')
+        self.assertIsNotNone(err)
+        self.assertIn("cannot add number and string", err.message)
+
+    def test_any_type(self):
+        out, err = run('let x: any = "a"; x = 1; print(x);')
+        self.assertIsNone(err)
+        self.assertEqual(out, "1\n")
+
+    def test_function_expression_annotation(self):
+        out, err = run("let f = fn(a: number): number { return a * 2; }; print(f(3));")
+        self.assertIsNone(err)
+        self.assertEqual(out, "6\n")
+
+    def test_collection_annotations(self):
+        out, err = run('let xs: list = [1, 2]; let m: map = {"a": 1}; print(xs); print(m);')
+        self.assertIsNone(err)
+        self.assertEqual(out, "[1, 2]\n{\"a\": 1}\n")
+
+
+class TestModulesAndMaps(unittest.TestCase):
+    def test_non_string_map_keys(self):
+        source = 'let m = {1: "one", true: "yes", nil: "none", "a": 1}; print(m[1]); print(m[true]); print(m[nil]); print(m["a"]); m[2] = "two"; print(len(m)); print(keys(m)); print(m);'
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, 'one\nyes\nnone\n1\n5\n[1, true, nil, "a", 2]\n{1: "one", true: "yes", nil: "none", "a": 1, 2: "two"}\n')
+
+    def test_import(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "helpers.sable"), "w") as handle:
+                handle.write('fn double(n) { return n * 2; }\nlet version = "1.0";\n')
+            source = 'import "helpers.sable"; print(double(21)); print(version);'
+            output = io.StringIO()
+            error = None
+            with contextlib.redirect_stdout(output):
+                try:
+                    sable.run_source(source, tmp)
+                except sable.SableError as exc:
+                    error = exc
+            self.assertIsNone(error)
+            self.assertEqual(output.getvalue(), "42\n1.0\n")
+
+    def test_import_runs_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "helpers.sable"), "w") as handle:
+                handle.write('print("loaded");\nfn double(n) { return n * 2; }\n')
+            source = 'import "helpers.sable"; import "helpers.sable"; print(double(5));'
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                sable.run_source(source, tmp)
+            self.assertEqual(output.getvalue(), "loaded\n10\n")
+
+    def test_import_error_reports_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "bad.sable"), "w") as handle:
+                handle.write("let x = ;\n")
+            try:
+                sable.run_source('import "bad.sable";', tmp)
+            except sable.SableError as error:
+                self.assertTrue(error.filename.endswith("bad.sable"))
+            else:
+                self.fail("expected an import error")
 
 
 class TestRepl(unittest.TestCase):

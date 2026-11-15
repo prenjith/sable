@@ -1,0 +1,9 @@
+const pi = 3.14159;
+
+fn square(n: number): number {
+    return n * n;
+}
+
+fn circle_area(r: number): number {
+    return pi * square(r);
+}

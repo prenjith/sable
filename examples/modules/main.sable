@@ -1,0 +1,4 @@
+import "mathx.sable";
+
+print(square(5));
+print(circle_area(2));

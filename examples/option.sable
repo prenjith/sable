@@ -1,0 +1,7 @@
+import "../stdlib/option.sable";
+
+let a = some(5);
+let b = none();
+
+print(is_some(a));
+print(is_some(b));

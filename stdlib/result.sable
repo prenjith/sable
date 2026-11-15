@@ -1,0 +1,18 @@
+fn ok(value) {
+    return {"ok": true, "value": value};
+}
+
+fn err(message) {
+    return {"ok": false, "error": message};
+}
+
+fn is_ok(result) {
+    return result.ok;
+}
+
+fn unwrap(result) {
+    if result.ok {
+        return result.value;
+    }
+    throw result.error;
+}

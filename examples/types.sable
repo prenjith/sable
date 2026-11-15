@@ -1,0 +1,12 @@
+fn area(width: number, height: number): number {
+    return width * height;
+}
+
+let w: number = 4;
+let h: number = 5;
+print(area(w, h));
+
+let names: list = ["ana", "ben"];
+let user: map = {"name": "ana", "age": 15};
+print(names);
+print(user.name);
