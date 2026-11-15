@@ -1,0 +1,29 @@
+class Point {
+    fn init(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    fn length() {
+        return sqrt(this.x * this.x + this.y * this.y);
+    }
+}
+
+class Counter {
+    fn init() {
+        this.n = 0;
+    }
+
+    fn bump() {
+        this.n = this.n + 1;
+        return this.n;
+    }
+}
+
+let p = new Point(3, 4);
+print(p.x);
+print(p.length());
+
+let c = new Counter();
+print(c.bump());
+print(c.bump());

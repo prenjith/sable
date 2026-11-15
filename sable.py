@@ -9,7 +9,7 @@ import functools
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 sys.setrecursionlimit(10000)
 
@@ -43,6 +43,7 @@ class SableThrown(Exception):
 KEYWORDS = {
     "let", "const", "fn", "if", "else", "while", "for", "in", "return",
     "break", "continue", "try", "catch", "throw", "match", "import",
+    "class", "new", "this",
     "true", "false", "nil", "and", "or", "not",
 }
 
@@ -258,6 +259,20 @@ class Continue:
 
 
 @dataclass
+class ClassDecl:
+    line: int
+    name: str
+    methods: List[Any]
+
+
+@dataclass
+class New:
+    line: int
+    name: str
+    args: List[Any]
+
+
+@dataclass
 class Import:
     line: int
     path: str
@@ -448,6 +463,8 @@ class Parser:
             return self.match_statement()
         if self.check("import"):
             return self.import_statement()
+        if self.check("class"):
+            return self.class_statement()
         if (self.check("fn") and self.peek().type == "IDENT"
                 and self.peek(2).type == "("):
             return self.fn_declaration()
@@ -549,6 +566,18 @@ class Parser:
             value = self.expression()
         self.consume(";", "expected ';' after return")
         return Return(tok.line, value)
+
+    def class_statement(self):
+        tok = self.advance()
+        name = self.consume("IDENT", "expected a class name")
+        self.consume("{", "expected '{' after the class name")
+        methods = []
+        while not self.check("}") and not self.check("EOF"):
+            if not self.check("fn"):
+                self.error("expected a method declaration")
+            methods.append(self.fn_declaration())
+        self.consume("}", "expected '}' after the class body")
+        return ClassDecl(tok.line, name.value, methods)
 
     def import_statement(self):
         tok = self.advance()
@@ -735,6 +764,13 @@ class Parser:
             return Literal(tok.line, False)
         if self.match("nil"):
             return Literal(tok.line, None)
+        if self.match("new"):
+            name = self.consume("IDENT", "expected a class name after 'new'")
+            self.consume("(", "expected '(' after the class name")
+            args = self.arguments()
+            return New(tok.line, name.value, args)
+        if self.match("this"):
+            return Var(tok.line, "this")
         if self.match("IDENT"):
             return Var(tok.line, tok.value)
         if self.match("("):
@@ -843,6 +879,33 @@ class Builtin:
         return f"<builtin {self.name}>"
 
 
+class SableClass:
+    def __init__(self, name, methods):
+        self.name = name
+        self.methods = methods
+
+    def __repr__(self):
+        return f"<class {self.name}>"
+
+
+class SableObject:
+    def __init__(self, klass):
+        self.klass = klass
+        self.fields = SableMap()
+
+    def __repr__(self):
+        return f"<{self.klass.name} object>"
+
+
+class BoundMethod:
+    def __init__(self, function, receiver):
+        self.function = function
+        self.receiver = receiver
+
+    def __repr__(self):
+        return f"<bound {self.function.name or 'method'}>"
+
+
 class SableMap:
     def __init__(self):
         self.entries = {}
@@ -932,7 +995,7 @@ def to_display(value):
     if isinstance(value, SableMap):
         parts = [repr_value(k) + ": " + repr_value(v) for k, v in value.items()]
         return "{" + ", ".join(parts) + "}"
-    if isinstance(value, (Function, Builtin)):
+    if isinstance(value, (Function, Builtin, SableClass, SableObject, BoundMethod)):
         return repr(value)
     return str(value)
 
@@ -1148,6 +1211,19 @@ class Checker:
     def check_Import(self, stmt):
         pass
 
+    def check_ClassDecl(self, stmt):
+        for method in stmt.methods:
+            param_types = [t or "any" for t in (method.param_types or [None] * len(method.params))]
+            return_type = method.return_type or "any"
+            self.push()
+            self.declare("this", "any")
+            for name, type_name in zip(method.params, param_types):
+                self.declare(name, type_name)
+            self.return_types.append(return_type)
+            self.check_stmt(method.body)
+            self.return_types.pop()
+            self.pop()
+
     def infer(self, expr):
         return getattr(self, "infer_" + type(expr).__name__)(expr)
 
@@ -1260,10 +1336,15 @@ class Checker:
             self.infer(argument)
         return "any"
 
+    def infer_New(self, expr):
+        for argument in expr.args:
+            self.infer(argument)
+        return "object"
+
     def infer_Index(self, expr):
         obj = self.infer(expr.obj)
         self.infer(expr.index)
-        if obj in ("list", "string", "map", "any"):
+        if obj in ("list", "string", "map", "object", "any"):
             return "any"
         raise SableTypeError(f"cannot index a {obj}", expr.line)
 
@@ -1327,6 +1408,14 @@ class Interpreter:
     def exec_Let(self, stmt, env):
         value = None if stmt.value is None else self.evaluate(stmt.value, env)
         env.define(stmt.name, value)
+        return None
+
+    def exec_ClassDecl(self, stmt, env):
+        methods = {}
+        for method in stmt.methods:
+            methods[method.name] = Function(method.name, method.params, method.body, env,
+                                            method.param_types, method.return_type)
+        env.define(stmt.name, SableClass(stmt.name, methods))
         return None
 
     def exec_Import(self, stmt, env):
@@ -1525,6 +1614,18 @@ class Interpreter:
             result.set(key, self.evaluate(value_expr, env))
         return result
 
+    def eval_New(self, expr, env):
+        klass = env.get(expr.name, expr.line)
+        if not isinstance(klass, SableClass):
+            raise SableRuntimeError(f"'{expr.name}' is not a class", expr.line)
+        obj = SableObject(klass)
+        args = [self.evaluate(arg, env) for arg in expr.args]
+        if "init" in klass.methods:
+            self.call_function(klass.methods["init"], args, expr.line, obj)
+        elif args:
+            raise SableRuntimeError(f"{klass.name}() takes no arguments", expr.line)
+        return obj
+
     def eval_FnExpr(self, expr, env):
         return Function(None, expr.params, expr.body, env,
                         expr.param_types, expr.return_type)
@@ -1537,30 +1638,37 @@ class Interpreter:
                     f"{callee.name}() got {len(args)} argument(s)", line)
             return callee.fn(args, line)
         if isinstance(callee, Function):
-            if len(args) != len(callee.params):
-                name = callee.name or "function"
-                raise SableRuntimeError(
-                    f"{name}() expects {len(callee.params)} argument(s), got {len(args)}",
-                    line)
-            self.depth += 1
-            if self.depth > 1000:
-                self.depth -= 1
-                raise SableRuntimeError("stack overflow", line)
-            call_env = Environment(callee.closure)
-            for name, value in zip(callee.params, args):
-                call_env.define(name, value)
-            try:
-                self.execute(callee.body, call_env)
-            except ReturnSignal as signal:
-                return signal.value
-            except BreakSignal as signal:
-                raise SableRuntimeError("'break' outside a loop", signal.line)
-            except ContinueSignal as signal:
-                raise SableRuntimeError("'continue' outside a loop", signal.line)
-            finally:
-                self.depth -= 1
-            return None
+            return self.call_function(callee, args, line)
+        if isinstance(callee, BoundMethod):
+            return self.call_function(callee.function, args, line, callee.receiver)
         raise SableRuntimeError("value is not callable", line)
+
+    def call_function(self, function, args, line, receiver=None):
+        if len(args) != len(function.params):
+            name = function.name or "function"
+            raise SableRuntimeError(
+                f"{name}() expects {len(function.params)} argument(s), got {len(args)}",
+                line)
+        self.depth += 1
+        if self.depth > 1000:
+            self.depth -= 1
+            raise SableRuntimeError("stack overflow", line)
+        call_env = Environment(function.closure)
+        if receiver is not None:
+            call_env.define("this", receiver)
+        for name, value in zip(function.params, args):
+            call_env.define(name, value)
+        try:
+            self.execute(function.body, call_env)
+        except ReturnSignal as signal:
+            return signal.value
+        except BreakSignal as signal:
+            raise SableRuntimeError("'break' outside a loop", signal.line)
+        except ContinueSignal as signal:
+            raise SableRuntimeError("'continue' outside a loop", signal.line)
+        finally:
+            self.depth -= 1
+        return None
 
     def iterable_items(self, value, line):
         if isinstance(value, list):
@@ -1593,6 +1701,14 @@ class Interpreter:
             return obj[i]
         if isinstance(obj, SableMap):
             return obj.get(index)
+        if isinstance(obj, SableObject):
+            if not isinstance(index, str):
+                raise SableRuntimeError("object fields must be strings", line)
+            if obj.fields.has(index):
+                return obj.fields.get(index)
+            if index in obj.klass.methods:
+                return BoundMethod(obj.klass.methods[index], obj)
+            raise SableRuntimeError(f"{obj.klass.name} has no field '{index}'", line)
         raise SableRuntimeError("value is not indexable", line)
 
     def set_index(self, obj, index, value, line):
@@ -1606,6 +1722,11 @@ class Interpreter:
             return
         if isinstance(obj, SableMap):
             obj.set(index, value)
+            return
+        if isinstance(obj, SableObject):
+            if not isinstance(index, str):
+                raise SableRuntimeError("object fields must be strings", line)
+            obj.fields.set(index, value)
             return
         if isinstance(obj, str):
             raise SableRuntimeError("strings are immutable", line)
@@ -1694,6 +1815,12 @@ class Interpreter:
             return "function"
         if isinstance(value, Builtin):
             return "builtin"
+        if isinstance(value, BoundMethod):
+            return "function"
+        if isinstance(value, SableClass):
+            return "class"
+        if isinstance(value, SableObject):
+            return "object"
         return "unknown"
 
     def builtin_range(self, args, line):

@@ -230,6 +230,35 @@ class TestAdvanced(unittest.TestCase):
         self.assertEqual(out, "[1, 2, 3]\n[3, 2, 1]\n")
 
 
+class TestClasses(unittest.TestCase):
+    def test_class(self):
+        source = 'class Point { fn init(x, y) { this.x = x; this.y = y; } fn length() { return sqrt(this.x * this.x + this.y * this.y); } } let p = new Point(3, 4); print(p.x); print(p.length()); p.x = 6; print(p.x); print(type(p));'
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "3\n5\n6\nobject\n")
+
+    def test_method_calls_method(self):
+        source = 'class Counter { fn init() { this.n = 0; } fn bump() { this.n = this.n + 1; return this.n; } fn twice() { this.bump(); return this.bump(); } } let c = new Counter(); print(c.twice());'
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "2\n")
+
+    def test_new_without_init(self):
+        out, err = run('class Empty {} let e = new Empty(); print(type(e));')
+        self.assertIsNone(err)
+        self.assertEqual(out, "object\n")
+
+    def test_new_extra_args(self):
+        out, err = run('class Empty {} let e = new Empty(1);')
+        self.assertIsNotNone(err)
+        self.assertIn("takes no arguments", err.message)
+
+    def test_missing_field(self):
+        out, err = run('class Empty {} let e = new Empty(); print(e.x);')
+        self.assertIsNotNone(err)
+        self.assertIn("has no field 'x'", err.message)
+
+
 class TestTypes(unittest.TestCase):
     def test_annotations_run(self):
         source = 'let x: number = 1; const name: string = "ana"; fn add(a: number, b: number): number { return a + b; } print(add(x, 2)); print(name);'
