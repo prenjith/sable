@@ -21,8 +21,11 @@ language fits together.
 
 - C-like syntax with semicolon-terminated statements
 - `let` and `const` declarations with block scoping
+- Optional type annotations and a static checker (`--check`)
+- `import` statements with module caching
 - First-class functions, anonymous functions, and lexical closures
-- Lists, string-keyed maps, and `map.key` dot access
+- Lists and maps with string, number, boolean, or nil keys
+- `map.key` dot access for string keys
 - `if` / `else`, `while`, and `for ... in`
 - `match` statements with literal, wildcard, and binding patterns
 - `try` / `catch` / `throw`
@@ -39,6 +42,7 @@ python3 sable.py examples/fib.sable
 python3 sable.py            # REPL
 python3 sable.py --tokens examples/fib.sable
 python3 sable.py --ast examples/fib.sable
+python3 sable.py --check examples/types.sable
 ```
 
 Sable programs use the `.sable` extension. Comments are `// line` and
@@ -79,7 +83,8 @@ print(c());
 print(c());
 ```
 
-Maps use string keys and support dot access:
+Maps accept string, number, boolean, or nil keys and support dot access for
+string keys:
 
 ```sable
 let user = {"name": "ana", "age": 15};
@@ -94,6 +99,24 @@ print(user.age);
 const limit = 10;
 limit = 20;   // RuntimeError: cannot assign to constant 'limit'
 ```
+
+### Type annotations
+
+Annotations are optional. When present, they are checked before the program
+runs:
+
+```sable
+fn area(width: number, height: number): number {
+    return width * height;
+}
+
+let w: number = 4;
+let h: number = 5;
+print(area(w, h));
+```
+
+Use `any` to opt out of checking. `python3 sable.py --check file.sable` runs
+the checker without executing the program.
 
 `match` picks the first arm that fits:
 
@@ -135,6 +158,17 @@ print(result);
 
 `value |> f` calls `f(value)`. If the right side is a call, the value becomes
 the first argument: `value |> f(x)` is `f(value, x)`.
+
+## Modules
+
+```sable
+import "mathx.sable";
+
+print(square(5));
+```
+
+Imports are resolved relative to the importing file and run once. Everything
+defined by the imported file is available in the importing program.
 
 ## Types
 
@@ -179,7 +213,8 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 ## Project layout
 
 ```
-sable.py                 interpreter, parser, lexer, and CLI
+sable.py                 interpreter, parser, lexer, checker, and CLI
+stdlib/                  small libraries written in Sable
 examples/                sample programs
 tests/                   unittest suite
 docs/index.html          language reference page
@@ -200,9 +235,9 @@ control-flow signals.
 
 ## Limitations
 
-- No modules or imports.
-- Maps only accept string keys.
 - No user-defined classes or methods.
+- No concurrency or async support.
+- No bytecode compiler or language server yet.
 - No garbage collector concerns (it is Python under the hood).
 - `and` / `or` return operand values, not strict booleans.
 

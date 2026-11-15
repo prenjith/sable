@@ -142,7 +142,19 @@ python3 sable.py --ast examples/fib.sable</code></pre>
 print(user.name);
 user.age = user.age + <span class="num">1</span>;
 print(items[<span class="num">0</span>]);</code></pre>
-  <p>Types are <code>nil</code>, <code>bool</code>, <code>number</code>, <code>string</code>, <code>list</code>, and <code>map</code>. Only <code>nil</code> and <code>false</code> are false.</p>
+  <p>Types are <code>nil</code>, <code>bool</code>, <code>number</code>, <code>string</code>, <code>list</code>, and <code>map</code>. Maps accept string, number, boolean, or nil keys. Only <code>nil</code> and <code>false</code> are false.</p>
+</section>
+
+<section>
+  <h2>Type annotations</h2>
+  <pre><code><span class="kw">fn</span> area(width: number, height: number): number {
+    <span class="kw">return</span> width * height;
+}
+
+<span class="kw">let</span> w: number = <span class="num">4</span>;
+<span class="kw">let</span> h: number = <span class="num">5</span>;
+print(area(w, h));</code></pre>
+  <p>Annotations are optional and checked before the program runs. Use <code>any</code> to opt out, or run <code>sable --check file.sable</code> to check without executing.</p>
 </section>
 
 <section>
@@ -229,6 +241,14 @@ print(result);</code></pre>
 </section>
 
 <section>
+  <h2>Modules</h2>
+  <pre><code><span class="kw">import</span> <span class="str">"mathx.sable"</span>;
+
+print(square(<span class="num">5</span>));</code></pre>
+  <p>Imports are resolved relative to the importing file and executed once. Everything the imported file defines becomes available.</p>
+</section>
+
+<section>
   <h2>Builtins</h2>
   <table>
     <tr><th>Name</th><th>Description</th></tr>
@@ -259,7 +279,7 @@ print(result);</code></pre>
 </main>
 
 <footer>
-  Sable 0.2.0 · <a href="https://github.com/prenjith/sable">source</a>
+  Sable 0.3.0 · <a href="https://github.com/prenjith/sable">source</a>
 </footer>
 
 </body>

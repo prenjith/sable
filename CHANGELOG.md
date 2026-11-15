@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — 2026-11-15
+
+- Optional type annotations and a static checker (`--check`)
+- `import` statements with module caching
+- Maps accept strings, numbers, booleans, and nil as keys
+- `stdlib/result.sable` and `stdlib/option.sable`
+- New examples for types, modules, results, and options
+
 ## 0.2.0 — 2026-11-15
 
 - Map dot access (`user.name`, `user.age += 1`)
