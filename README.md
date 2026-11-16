@@ -26,6 +26,8 @@ language fits together.
 - First-class functions, anonymous functions, and lexical closures
 - Classes with methods, `this`, and `new`
 - Concurrent tasks with `spawn`, `wait`, and `sleep`
+- Sable → C compiler for the core language (`sablec.py`)
+- Full-language native binaries built with Nuitka
 - Lists and maps with string, number, boolean, or nil keys
 - `map.key` dot access for string keys
 - `if` / `else`, `while`, and `for ... in`
@@ -232,6 +234,24 @@ print(wait(task));
 `sleep(ms)` pauses the current task. Threads share memory, so keep tasks
 independent or synchronize access yourself.
 
+## Native backend
+
+`sablec.py` compiles the core language to C and builds a native executable:
+
+```
+python3 sablec.py examples/fizzbuzz.sable -o fizzbuzz
+./fizzbuzz
+```
+
+Supported: numbers, strings, booleans, nil, variables, arithmetic,
+comparisons, if/else, while, `for..in range(...)`, top-level functions, and
+`print`/`str`/`num`/`len`.
+
+Not supported yet: lists, maps, classes, `match`, `try`/`catch`, imports,
+concurrency, and anonymous functions. Requires a C compiler (`cc`, `clang`, or
+`gcc`). Full-language native binaries are built with Nuitka in CI and attached
+to tagged releases.
+
 ## Types
 
 - `nil`
@@ -277,6 +297,7 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 
 ```
 sable.py                 interpreter, parser, lexer, checker, and CLI
+sablec.py                Sable to C compiler (core subset)
 lsp.py                   minimal language server (diagnostics)
 pyproject.toml           pip packaging and entry points
 Dockerfile               container image

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 — 2026-11-16
+
+- Sable → C compiler (`sablec.py`) for the core language
+- Native backend tests
+- Nuitka-built full-language native binaries in CI releases
+
 ## 0.8.0 — 2026-11-16
 
 - Installable Python package with `sable` and `sable-lsp` entry points
