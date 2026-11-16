@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0 — 2026-11-15
+
+- Classes with methods, `this`, and `new`
+- `init` constructors and object field access
+
 ## 0.3.0 — 2026-11-15
 
 - Optional type annotations and a static checker (`--check`)

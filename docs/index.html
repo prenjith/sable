@@ -249,6 +249,24 @@ print(square(<span class="num">5</span>));</code></pre>
 </section>
 
 <section>
+  <h2>Classes</h2>
+  <pre><code><span class="kw">class</span> Point {
+    <span class="kw">fn</span> init(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    <span class="kw">fn</span> length() {
+        <span class="kw">return</span> sqrt(this.x * this.x + this.y * this.y);
+    }
+}
+
+<span class="kw">let</span> p = <span class="kw">new</span> Point(<span class="num">3</span>, <span class="num">4</span>);
+print(p.length());</code></pre>
+  <p><code>new</code> creates an object and calls <code>init</code> when it exists. Fields are accessed with dot notation, and methods receive <code>this</code>.</p>
+</section>
+
+<section>
   <h2>Builtins</h2>
   <table>
     <tr><th>Name</th><th>Description</th></tr>
@@ -279,7 +297,7 @@ print(square(<span class="num">5</span>));</code></pre>
 </main>
 
 <footer>
-  Sable 0.3.0 · <a href="https://github.com/prenjith/sable">source</a>
+  Sable 0.4.0 · <a href="https://github.com/prenjith/sable">source</a>
 </footer>
 
 </body>

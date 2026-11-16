@@ -24,6 +24,7 @@ language fits together.
 - Optional type annotations and a static checker (`--check`)
 - `import` statements with module caching
 - First-class functions, anonymous functions, and lexical closures
+- Classes with methods, `this`, and `new`
 - Lists and maps with string, number, boolean, or nil keys
 - `map.key` dot access for string keys
 - `if` / `else`, `while`, and `for ... in`
@@ -170,6 +171,27 @@ print(square(5));
 Imports are resolved relative to the importing file and run once. Everything
 defined by the imported file is available in the importing program.
 
+## Classes
+
+Classes hold fields and methods. `this` refers to the current object, and
+`new` runs `init` if it exists:
+
+```sable
+class Point {
+    fn init(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    fn length() {
+        return sqrt(this.x * this.x + this.y * this.y);
+    }
+}
+
+let p = new Point(3, 4);
+print(p.length());
+```
+
 ## Types
 
 - `nil`
@@ -235,7 +257,7 @@ control-flow signals.
 
 ## Limitations
 
-- No user-defined classes or methods.
+- No inheritance or interfaces.
 - No concurrency or async support.
 - No bytecode compiler or language server yet.
 - No garbage collector concerns (it is Python under the hood).
