@@ -25,6 +25,7 @@ language fits together.
 - `import` statements with module caching
 - First-class functions, anonymous functions, and lexical closures
 - Classes with methods, `this`, and `new`
+- Concurrent tasks with `spawn`, `wait`, and `sleep`
 - Lists and maps with string, number, boolean, or nil keys
 - `map.key` dot access for string keys
 - `if` / `else`, `while`, and `for ... in`
@@ -192,6 +193,22 @@ let p = new Point(3, 4);
 print(p.length());
 ```
 
+## Concurrency
+
+`spawn` runs a function on its own thread and returns a task. `wait` joins the
+task and returns its result:
+
+```sable
+let task = spawn(fn() {
+    return 21 * 2;
+});
+
+print(wait(task));
+```
+
+`sleep(ms)` pauses the current task. Threads share memory, so keep tasks
+independent or synchronize access yourself.
+
 ## Types
 
 - `nil`
@@ -231,6 +248,7 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 | `replace(s, old, new)`, `trim(s)`, `starts_with(s, p)`, `ends_with(s, s2)` | String helpers |
 | `join(list, sep)`, `split(s, sep)`, `upper(s)`, `lower(s)` | String conversion |
 | `input(prompt?)`, `assert(cond, message?)` | Input and checks |
+| `spawn(fn, ...)`, `wait(task)`, `sleep(ms)` | Concurrency |
 
 ## Project layout
 
@@ -258,7 +276,7 @@ control-flow signals.
 ## Limitations
 
 - No inheritance or interfaces.
-- No concurrency or async support.
+- Threads share memory; there is no locking or async/await.
 - No bytecode compiler or language server yet.
 - No garbage collector concerns (it is Python under the hood).
 - `and` / `or` return operand values, not strict booleans.

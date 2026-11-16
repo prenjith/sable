@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — 2026-11-15
+
+- `spawn`, `wait`, and `sleep` for thread-based concurrency
+
 ## 0.4.0 — 2026-11-15
 
 - Classes with methods, `this`, and `new`

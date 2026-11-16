@@ -267,6 +267,16 @@ print(p.length());</code></pre>
 </section>
 
 <section>
+  <h2>Concurrency</h2>
+  <pre><code><span class="kw">let</span> task = spawn(<span class="kw">fn</span>() {
+    <span class="kw">return</span> <span class="num">21</span> * <span class="num">2</span>;
+});
+
+print(wait(task));</code></pre>
+  <p><code>spawn</code> runs a function on another thread and returns a task; <code>wait</code> joins it. <code>sleep(ms)</code> pauses the current task. Shared mutable state is not synchronized.</p>
+</section>
+
+<section>
   <h2>Builtins</h2>
   <table>
     <tr><th>Name</th><th>Description</th></tr>
@@ -297,7 +307,7 @@ print(p.length());</code></pre>
 </main>
 
 <footer>
-  Sable 0.4.0 · <a href="https://github.com/prenjith/sable">source</a>
+  Sable 0.5.0 · <a href="https://github.com/prenjith/sable">source</a>
 </footer>
 
 </body>
