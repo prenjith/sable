@@ -38,7 +38,17 @@ language fits together.
 - Static verification (`--verify`) and a parser/checker fuzzer
 - Errors with line and column information
 
-## Running
+## Install
+
+With Python 3.9+:
+
+```
+pip install .
+sable examples/fizzbuzz.sable
+sable-lsp
+```
+
+Or run the single file directly:
 
 ```
 python3 sable.py examples/fizzbuzz.sable
@@ -49,6 +59,16 @@ python3 sable.py --ast examples/fib.sable
 python3 sable.py --check examples/types.sable
 python3 sable.py --verify examples/types.sable
 ```
+
+Docker:
+
+```
+docker build -t sable .
+docker run --rm -v "$PWD:/work" -w /work sable examples/fizzbuzz.sable
+```
+
+GitHub Actions builds standalone `sable` and `sable-lsp` binaries for Linux,
+macOS, and Windows; tagged releases attach them.
 
 Sable programs use the `.sable` extension. Comments are `// line` and
 `/* block */`.
@@ -258,6 +278,9 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 ```
 sable.py                 interpreter, parser, lexer, checker, and CLI
 lsp.py                   minimal language server (diagnostics)
+pyproject.toml           pip packaging and entry points
+Dockerfile               container image
+.github/workflows/       cross-platform tests and binary builds
 tools/fuzz_parser.py     parser and checker fuzzer
 Makefile                 test, fuzz, and verify shortcuts
 stdlib/                  small libraries written in Sable

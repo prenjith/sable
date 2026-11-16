@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 — 2026-11-16
+
+- Installable Python package with `sable` and `sable-lsp` entry points
+- Dockerfile
+- GitHub Actions test matrix and standalone binary builds for Linux, macOS,
+  and Windows
+- Tagged releases attach the built binaries
+
 ## 0.7.0 — 2026-11-16
 
 - `--verify` static checks for control flow, unreachable code, duplicate map
