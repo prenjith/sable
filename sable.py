@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 sys.setrecursionlimit(10000)
 
