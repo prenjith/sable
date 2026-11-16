@@ -35,8 +35,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyinstaller
-      - run: pyinstaller --onefile --name sable sable.py
-      - run: pyinstaller --onefile --name sable-lsp lsp.py
+      - run: pyinstaller --onefile --name sable-${{ runner.os }} sable.py
+      - run: pyinstaller --onefile --name sable-lsp-${{ runner.os }} lsp.py
       - uses: actions/upload-artifact@v4
         with:
           name: sable-${{ matrix.os }}
