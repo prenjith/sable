@@ -1,0 +1,17 @@
+fn assert_eq(actual, expected) {
+    if actual != expected {
+        throw "assert_eq failed: expected " + str(expected) + ", got " + str(actual);
+    }
+}
+
+fn assert_true(value) {
+    if not value {
+        throw "assert_true failed";
+    }
+}
+
+fn assert_false(value) {
+    if value {
+        throw "assert_false failed";
+    }
+}

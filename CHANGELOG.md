@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.0 — 2026-11-16
+
+- File, environment, random, clock, JSON, and exit builtins
+- `sable --test` runner for `.sable` test files
+- `stdlib/testing.sable` assertions
+- JSON-backed todo example
+
 ## 0.13.0 — 2026-11-16
 
 - Native stack bytecode compiler (`native/compiler.py`)

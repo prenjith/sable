@@ -3,15 +3,17 @@
 
 import sys
 import os
+import json
 import math
 import bisect
 import functools
+import random
 import threading
 import time
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-VERSION = "0.13.0"
+VERSION = "0.14.0"
 
 sys.setrecursionlimit(10000)
 
@@ -1973,6 +1975,17 @@ class Interpreter:
         register("wait", self.builtin_wait, 1, 1)
         register("sleep", self.builtin_sleep, 1, 1)
         register("read_file", self.builtin_read_file, 1, 1)
+        register("write_file", self.builtin_write_file, 2, 2)
+        register("append_file", self.builtin_append_file, 2, 2)
+        register("file_exists", self.builtin_file_exists, 1, 1)
+        register("list_dir", self.builtin_list_dir, 1, 1)
+        register("getenv", self.builtin_getenv, 1, 1)
+        register("clock", self.builtin_clock, 0, 0)
+        register("random", self.builtin_random, 0, 0)
+        register("random_int", self.builtin_random_int, 2, 2)
+        register("json_encode", self.builtin_json_encode, 1, 1)
+        register("json_decode", self.builtin_json_decode, 1, 1)
+        register("exit", self.builtin_exit, 1, 1)
         register("argv", self.builtin_argv, 0, 0)
 
     def builtin_print(self, args, line):
@@ -2289,6 +2302,105 @@ class Interpreter:
     def builtin_argv(self, args, line):
         return list(self.script_args)
 
+    def builtin_write_file(self, args, line):
+        path, text = args
+        if not isinstance(path, str) or not isinstance(text, str):
+            raise SableRuntimeError("write_file() expects a path and a string", line)
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text)
+        except OSError as error:
+            raise SableRuntimeError(f"cannot write {path!r}: {error}", line)
+        return None
+
+    def builtin_append_file(self, args, line):
+        path, text = args
+        if not isinstance(path, str) or not isinstance(text, str):
+            raise SableRuntimeError("append_file() expects a path and a string", line)
+        try:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(text)
+        except OSError as error:
+            raise SableRuntimeError(f"cannot append to {path!r}: {error}", line)
+        return None
+
+    def builtin_file_exists(self, args, line):
+        if not isinstance(args[0], str):
+            raise SableRuntimeError("file_exists() expects a path", line)
+        return os.path.exists(args[0])
+
+    def builtin_list_dir(self, args, line):
+        if not isinstance(args[0], str):
+            raise SableRuntimeError("list_dir() expects a path", line)
+        try:
+            return sorted(os.listdir(args[0]))
+        except OSError as error:
+            raise SableRuntimeError(f"cannot list {args[0]!r}: {error}", line)
+
+    def builtin_getenv(self, args, line):
+        if not isinstance(args[0], str):
+            raise SableRuntimeError("getenv() expects a name", line)
+        value = os.environ.get(args[0])
+        return value if value is not None else None
+
+    def builtin_clock(self, args, line):
+        return time.time()
+
+    def builtin_random(self, args, line):
+        return random.random()
+
+    def builtin_random_int(self, args, line):
+        low = self.require_int(args[0], line, "random_int lower bound")
+        high = self.require_int(args[1], line, "random_int upper bound")
+        if low > high:
+            raise SableRuntimeError("random_int() lower bound is larger than upper bound", line)
+        return float(random.randint(low, high))
+
+    def builtin_json_encode(self, args, line):
+        return json.dumps(self.to_json(args[0], line))
+
+    def builtin_json_decode(self, args, line):
+        if not isinstance(args[0], str):
+            raise SableRuntimeError("json_decode() expects a string", line)
+        try:
+            return self.from_json(json.loads(args[0]))
+        except json.JSONDecodeError as error:
+            raise SableRuntimeError(f"invalid JSON: {error}", line)
+
+    def builtin_exit(self, args, line):
+        code = self.require_int(args[0], line, "exit code")
+        raise SystemExit(code)
+
+    def to_json(self, value, line):
+        if value is None or isinstance(value, (bool, float, str)):
+            return value
+        if isinstance(value, list):
+            return [self.to_json(item, line) for item in value]
+        if isinstance(value, SableMap):
+            result = {}
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    raise SableRuntimeError("JSON objects need string keys", line)
+                result[key] = self.to_json(item, line)
+            return result
+        raise SableRuntimeError("cannot encode this value as JSON", line)
+
+    def from_json(self, value):
+        if isinstance(value, dict):
+            result = SableMap()
+            for key, item in value.items():
+                result.set(key, self.from_json(item))
+            return result
+        if isinstance(value, list):
+            return [self.from_json(item) for item in value]
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            return value
+        return None
+
     def builtin_upper(self, args, line):
         if not isinstance(args[0], str):
             raise SableRuntimeError("upper() expects a string", line)
@@ -2388,6 +2500,28 @@ def read_source(path):
         return handle.read()
 
 
+def run_tests(directory):
+    import glob
+    files = sorted(glob.glob(os.path.join(directory, "*.sable")))
+    if not files:
+        print(f"no .sable tests found in {directory}")
+        return 1
+    failures = 0
+    for path in files:
+        source = ""
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                source = handle.read()
+            run_source(source, os.path.dirname(os.path.abspath(path)))
+            print(f"PASS {path}")
+        except SableError as error:
+            failures += 1
+            print(f"FAIL {path}")
+            print(format_error(error, source))
+    print(f"{len(files) - failures} passed, {failures} failed")
+    return 1 if failures else 0
+
+
 def repl():
     print(f"Sable {VERSION}  (Ctrl-D to quit)")
     interpreter = Interpreter(os.getcwd())
@@ -2435,6 +2569,7 @@ def main(argv=None):
         print("  sable --ast f      print the parsed AST")
         print("  sable --check f    check type annotations")
         print("  sable --verify f   run static verification checks")
+        print("  sable --test dir   run every .sable file in dir as a test")
         print("  sable -v           print the version")
         return 0
     if arg == "--check":
@@ -2453,6 +2588,9 @@ def main(argv=None):
             return 1
         print("ok")
         return 0
+    if arg == "--test":
+        directory = argv[2] if len(argv) > 2 else "."
+        return run_tests(directory)
     if arg == "--verify":
         if len(argv) < 3:
             print("--verify needs a file", file=sys.stderr)

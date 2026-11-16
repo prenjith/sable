@@ -31,6 +31,8 @@ language fits together.
 - Browser playground via Pyodide, published with GitHub Pages
 - Self-hosted core interpreter written in Sable
 - Native stack bytecode compiler and C VM for the core language
+- Practical file, JSON, environment, random, and clock builtins
+- `--test` runner for `.sable` test files
 - User research kit for Hack Club sessions
 - Lists and maps with string, number, boolean, or nil keys
 - `map.key` dot access for string keys
@@ -64,6 +66,7 @@ python3 sable.py --tokens examples/fib.sable
 python3 sable.py --ast examples/fib.sable
 python3 sable.py --check examples/types.sable
 python3 sable.py --verify examples/types.sable
+python3 sable.py --test tests_dir
 ```
 
 Docker:
@@ -284,6 +287,21 @@ It supports numbers, strings, booleans, nil, variables, arithmetic,
 comparisons, if/else, while, and print. Functions, lists, maps, classes,
 errors, modules, and threads are the next milestones in `native/PLAN.md`.
 
+## Useful scripts
+
+`examples/todo.sable` is a small JSON-backed todo CLI:
+
+```
+python3 sable.py examples/todo.sable add "buy milk"
+python3 sable.py examples/todo.sable list
+python3 sable.py examples/todo.sable done 0
+python3 sable.py examples/todo.sable clear
+```
+
+`stdlib/testing.sable` provides `assert_eq`, `assert_true`, and `assert_false`.
+`sable --test dir` runs every `.sable` file in a directory and reports pass or
+fail.
+
 ## Self-hosting
 
 `selfhost/sable.sable` is a core Sable interpreter written in Sable. Run it
@@ -336,6 +354,12 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 | `replace(s, old, new)`, `trim(s)`, `starts_with(s, p)`, `ends_with(s, s2)` | String helpers |
 | `join(list, sep)`, `split(s, sep)`, `upper(s)`, `lower(s)` | String conversion |
 | `input(prompt?)`, `assert(cond, message?)` | Input and checks |
+| `read_file`, `write_file`, `append_file` | File I/O |
+| `file_exists`, `list_dir` | Filesystem checks |
+| `getenv`, `argv()` | Environment and arguments |
+| `json_encode`, `json_decode` | JSON conversion |
+| `clock`, `random`, `random_int` | Time and randomness |
+| `exit(code)` | Exit status |
 | `spawn(fn, ...)`, `wait(task)`, `sleep(ms)` | Concurrency |
 
 ## Project layout
@@ -379,6 +403,7 @@ control-flow signals.
 
 ```
 python3 sable.py --verify examples/types.sable
+python3 sable.py --test tests_dir
 ```
 
 It reports break/continue outside loops, return outside functions, unreachable

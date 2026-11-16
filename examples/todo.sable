@@ -1,0 +1,56 @@
+let DATA = "todo.json";
+
+fn load_items() {
+    if file_exists(DATA) {
+        return json_decode(read_file(DATA));
+    }
+    return [];
+}
+
+fn save_items(items) {
+    write_file(DATA, json_encode(items));
+}
+
+let args = argv();
+let items = load_items();
+
+if len(args) == 0 {
+    print("usage: sable examples/todo.sable add|list|done|clear [text]");
+} else if args[0] == "add" {
+    if len(args) < 2 {
+        print("add needs some text");
+    } else {
+        let text = join(slice(args, 1, len(args)), " ");
+        push(items, {"text": text, "done": false});
+        save_items(items);
+        print("added");
+    }
+} else if args[0] == "list" {
+    let index = 0;
+    while index < len(items) {
+        let mark = "[ ]";
+        if items[index].done {
+            mark = "[x]";
+        }
+        print(str(index) + " " + mark + " " + items[index].text);
+        index = index + 1;
+    }
+} else if args[0] == "done" {
+    if len(args) < 2 {
+        print("done needs an index");
+    } else {
+        let index = num(args[1]);
+        if index >= 0 and index < len(items) {
+            items[index].done = true;
+            save_items(items);
+            print("done");
+        } else {
+            print("bad index");
+        }
+    }
+} else if args[0] == "clear" {
+    write_file(DATA, "[]");
+    print("cleared");
+} else {
+    print("unknown command");
+}
