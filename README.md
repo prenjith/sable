@@ -75,7 +75,7 @@ macOS, and Windows; tagged releases attach them.
 
 ## Run it anywhere
 
-- Browser: https://prenjith.github.io/sable/playground.html (Pyodide; works on
+- Browser: https://pranavrenjith2-source.github.io/sable-playground/ (Pyodide; works on
   phones and tablets)
 - Linux, macOS, Windows: standalone binaries on the
   [releases page](https://github.com/prenjith/sable/releases)
