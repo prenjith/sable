@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0 — 2026-11-15
+
+- Minimal language server (`lsp.py`) with parse and type diagnostics
+- Language server test coverage
+
 ## 0.5.0 — 2026-11-15
 
 - `spawn`, `wait`, and `sleep` for thread-based concurrency

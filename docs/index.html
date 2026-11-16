@@ -296,6 +296,11 @@ print(wait(task));</code></pre>
 </section>
 
 <section>
+  <h2>Editor support</h2>
+  <p>The repository includes a minimal language server:</p>
+  <pre><code>python3 lsp.py</code></pre>
+  <p>It speaks JSON-RPC over stdio and publishes parse and type diagnostics. The VS Code extension in <code>editors/vscode</code> adds syntax highlighting.</p>
+
   <h2>How it works</h2>
   <p>Sable is a single-file tree-walking interpreter. The lexer produces tokens with line and column positions, the parser builds an AST with recursive descent, and the interpreter evaluates that AST against a chain of environments. Closures capture their defining environment; <code>return</code>, <code>break</code>, and <code>continue</code> are control-flow signals.</p>
   <p>Errors point at the source line:</p>
@@ -307,7 +312,7 @@ print(wait(task));</code></pre>
 </main>
 
 <footer>
-  Sable 0.5.0 · <a href="https://github.com/prenjith/sable">source</a>
+  Sable 0.6.0 · <a href="https://github.com/prenjith/sable">source</a>
 </footer>
 
 </body>

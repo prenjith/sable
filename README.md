@@ -33,7 +33,8 @@ language fits together.
 - `try` / `catch` / `throw`
 - `|>` pipelines
 - A standard library for math, strings, and collections
-- REPL, file runner, token dumper, and AST dumper
+- REPL, file runner, token dumper, AST dumper, and type checker
+- Minimal language server (`lsp.py`) with diagnostics
 - Errors with line and column information
 
 ## Running
@@ -254,6 +255,7 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 
 ```
 sable.py                 interpreter, parser, lexer, checker, and CLI
+lsp.py                   minimal language server (diagnostics)
 stdlib/                  small libraries written in Sable
 examples/                sample programs
 tests/                   unittest suite
@@ -277,7 +279,8 @@ control-flow signals.
 
 - No inheritance or interfaces.
 - Threads share memory; there is no locking or async/await.
-- No bytecode compiler or language server yet.
+- No bytecode compiler yet; the evaluator is a tree-walker.
+- No formal verification.
 - No garbage collector concerns (it is Python under the hood).
 - `and` / `or` return operand values, not strict booleans.
 
