@@ -29,6 +29,7 @@ language fits together.
 - Sable → C compiler for the core language (`sablec.py`)
 - Full-language native binaries built with Nuitka
 - Browser playground via Pyodide, published with GitHub Pages
+- Self-hosted core interpreter written in Sable
 - User research kit for Hack Club sessions
 - Lists and maps with string, number, boolean, or nil keys
 - `map.key` dot access for string keys
@@ -267,6 +268,19 @@ concurrency, and anonymous functions. Requires a C compiler (`cc`, `clang`, or
 `gcc`). Full-language native binaries are built with Nuitka in CI and attached
 to tagged releases.
 
+## Self-hosting
+
+`selfhost/sable.sable` is a core Sable interpreter written in Sable. Run it
+with the host:
+
+```
+python3 sable.py selfhost/sable.sable examples/fizzbuzz.sable
+```
+
+It supports the core language and is covered by parity tests. The first run
+still needs a seed interpreter; the path to a fully native build is extending
+the C backend to the features the self-hosted interpreter uses.
+
 ## Types
 
 - `nil`
@@ -313,6 +327,7 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 ```
 sable.py                 interpreter, parser, lexer, checker, and CLI
 sablec.py                Sable to C compiler (core subset)
+selfhost/                core interpreter written in Sable
 lsp.py                   minimal language server (diagnostics)
 pyproject.toml           pip packaging and entry points
 Dockerfile               container image

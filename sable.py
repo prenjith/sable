@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-VERSION = "0.11.0"
+VERSION = "0.12.0"
 
 sys.setrecursionlimit(10000)
 
@@ -1563,9 +1563,10 @@ class Verifier:
 
 
 class Interpreter:
-    def __init__(self, base_dir="."):
+    def __init__(self, base_dir=".", script_args=None):
         self.globals = Environment()
         self.base_dir = base_dir
+        self.script_args = script_args or []
         self.loaded_modules = set()
         self.local = threading.local()
         self.install_builtins()
@@ -1971,6 +1972,8 @@ class Interpreter:
         register("spawn", self.builtin_spawn, 1, None)
         register("wait", self.builtin_wait, 1, 1)
         register("sleep", self.builtin_sleep, 1, 1)
+        register("read_file", self.builtin_read_file, 1, 1)
+        register("argv", self.builtin_argv, 0, 0)
 
     def builtin_print(self, args, line):
         print(" ".join(to_display(value) for value in args))
@@ -2273,6 +2276,19 @@ class Interpreter:
         time.sleep(max(0.0, args[0] / 1000.0))
         return None
 
+    def builtin_read_file(self, args, line):
+        path = args[0]
+        if not isinstance(path, str):
+            raise SableRuntimeError("read_file() expects a path string", line)
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                return handle.read()
+        except OSError as error:
+            raise SableRuntimeError(f"cannot read {path!r}: {error}", line)
+
+    def builtin_argv(self, args, line):
+        return list(self.script_args)
+
     def builtin_upper(self, args, line):
         if not isinstance(args[0], str):
             raise SableRuntimeError("upper() expects a string", line)
@@ -2309,14 +2325,14 @@ def parse(source):
     return Parser(lex(source), source).parse()
 
 
-def interpret(program, base_dir="."):
-    return Interpreter(base_dir).run(program)
+def interpret(program, base_dir=".", script_args=None):
+    return Interpreter(base_dir, script_args).run(program)
 
 
-def run_source(source, base_dir="."):
+def run_source(source, base_dir=".", script_args=None):
     program = parse(source)
     Checker().check(program)
-    return interpret(program, base_dir)
+    return interpret(program, base_dir, script_args)
 
 
 def format_error(error, source):
@@ -2488,7 +2504,7 @@ def main(argv=None):
         return 1
     base_dir = os.path.dirname(os.path.abspath(arg))
     try:
-        run_source(source, base_dir)
+        run_source(source, base_dir, argv[2:])
     except SableError as error:
         print(format_error(error, source), file=sys.stderr)
         return 1

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.0 — 2026-11-16
+
+- Self-hosted core interpreter written in Sable (`selfhost/sable.sable`)
+- `read_file` and `argv` builtins for self-hosting
+- Self-host parity tests
+
 ## 0.11.0 — 2026-11-16
 
 - User research kit for Hack Club sessions: protocol, task cards, consent and

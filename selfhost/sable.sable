@@ -1,0 +1,614 @@
+// A self-hosted core interpreter for Sable.
+// It runs on the Python-hosted interpreter and executes the core language.
+
+fn is_digit(ch) {
+    return contains("0123456789", ch);
+}
+
+fn is_alpha(ch) {
+    return contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_", ch);
+}
+
+fn is_space(ch) {
+    return ch == " " or ch == "\t" or ch == "\n" or ch == "\r";
+}
+
+fn tokenize(source) {
+    let tokens = [];
+    let i = 0;
+    let line = 1;
+    let n = len(source);
+    while i < n {
+        let ch = source[i];
+        if is_space(ch) {
+            if ch == "\n" {
+                line = line + 1;
+            }
+            i = i + 1;
+            continue;
+        }
+        if ch == "/" and i + 1 < n and source[i + 1] == "/" {
+            while i < n and source[i] != "\n" {
+                i = i + 1;
+            }
+            continue;
+        }
+        if is_digit(ch) {
+            let start = i;
+            while i < n and is_digit(source[i]) {
+                i = i + 1;
+            }
+            if i + 1 < n and source[i] == "." and is_digit(source[i + 1]) {
+                i = i + 1;
+                while i < n and is_digit(source[i]) {
+                    i = i + 1;
+                }
+            }
+            push(tokens, {"type": "NUMBER", "value": num(slice(source, start, i)), "line": line});
+            continue;
+        }
+        if ch == "\"" {
+            i = i + 1;
+            let text = "";
+            while i < n and source[i] != "\"" {
+                text = text + source[i];
+                i = i + 1;
+            }
+            i = i + 1;
+            push(tokens, {"type": "STRING", "value": text, "line": line});
+            continue;
+        }
+        if is_alpha(ch) {
+            let start = i;
+            while i < n and (is_alpha(source[i]) or is_digit(source[i])) {
+                i = i + 1;
+            }
+            push(tokens, {"type": "IDENT", "value": slice(source, start, i), "line": line});
+            continue;
+        }
+        if i + 1 < n {
+            let two = slice(source, i, i + 2);
+            if two == "==" or two == "!=" or two == "<=" or two == ">=" or two == "+=" or two == "-=" or two == "*=" or two == "/=" {
+                push(tokens, {"type": "OP", "value": two, "line": line});
+                i = i + 2;
+                continue;
+            }
+        }
+        push(tokens, {"type": "OP", "value": ch, "line": line});
+        i = i + 1;
+    }
+    push(tokens, {"type": "EOF", "value": nil, "line": line});
+    return tokens;
+}
+
+fn peek(state) {
+    return state.tokens[state.pos];
+}
+
+fn advance(state) {
+    let token = peek(state);
+    state.pos = state.pos + 1;
+    return token;
+}
+
+fn check_type(state, kind) {
+    return peek(state).type == kind;
+}
+
+fn check_value(state, value) {
+    return peek(state).value == value;
+}
+
+fn match_value(state, value) {
+    if check_value(state, value) {
+        advance(state);
+        return true;
+    }
+    return false;
+}
+
+fn expect_value(state, value) {
+    if not check_value(state, value) {
+        throw "expected " + value + " at line " + str(peek(state).line);
+    }
+    return advance(state);
+}
+
+fn expect_type(state, kind) {
+    if not check_type(state, kind) {
+        throw "expected " + kind + " at line " + str(peek(state).line);
+    }
+    return advance(state);
+}
+
+fn parse_program(state) {
+    let statements = [];
+    while not check_type(state, "EOF") {
+        push(statements, parse_statement(state));
+    }
+    return statements;
+}
+
+fn parse_statement(state) {
+    if match_value(state, "let") {
+        let name = expect_type(state, "IDENT").value;
+        let value = nil;
+        if match_value(state, "=") {
+            value = parse_expression(state);
+        }
+        expect_value(state, ";");
+        return {"kind": "let", "name": name, "value": value};
+    }
+    if match_value(state, "const") {
+        let name = expect_type(state, "IDENT").value;
+        expect_value(state, "=");
+        let value = parse_expression(state);
+        expect_value(state, ";");
+        return {"kind": "let", "name": name, "value": value};
+    }
+    if check_value(state, "fn") {
+        return parse_function(state);
+    }
+    if check_value(state, "if") {
+        return parse_if(state);
+    }
+    if match_value(state, "while") {
+        let cond = parse_expression(state);
+        let body = parse_block(state);
+        return {"kind": "while", "cond": cond, "body": body};
+    }
+    if match_value(state, "for") {
+        let name = expect_type(state, "IDENT").value;
+        expect_value(state, "in");
+        let iterable = parse_expression(state);
+        let body = parse_block(state);
+        return {"kind": "for", "name": name, "iter": iterable, "body": body};
+    }
+    if match_value(state, "return") {
+        let value = nil;
+        if not check_value(state, ";") {
+            value = parse_expression(state);
+        }
+        expect_value(state, ";");
+        return {"kind": "return", "value": value};
+    }
+    if match_value(state, "break") {
+        expect_value(state, ";");
+        return {"kind": "break"};
+    }
+    if match_value(state, "continue") {
+        expect_value(state, ";");
+        return {"kind": "continue"};
+    }
+    if check_value(state, "{") {
+        return {"kind": "block", "body": parse_block(state)};
+    }
+    let expr = parse_expression(state);
+    expect_value(state, ";");
+    return {"kind": "expr", "expr": expr};
+}
+
+fn parse_function(state) {
+    expect_value(state, "fn");
+    let name = expect_type(state, "IDENT").value;
+    expect_value(state, "(");
+    let params = [];
+    if not check_value(state, ")") {
+        while true {
+            push(params, expect_type(state, "IDENT").value);
+            if not match_value(state, ",") {
+                break;
+            }
+        }
+    }
+    expect_value(state, ")");
+    let body = parse_block(state);
+    return {"kind": "fn", "name": name, "params": params, "body": body};
+}
+
+fn parse_if(state) {
+    expect_value(state, "if");
+    let cond = parse_expression(state);
+    let then_branch = parse_block(state);
+    let else_branch = nil;
+    if match_value(state, "else") {
+        if check_value(state, "if") {
+            else_branch = parse_if(state);
+        } else {
+            else_branch = parse_block(state);
+        }
+    }
+    return {"kind": "if", "cond": cond, "then": then_branch, "else": else_branch};
+}
+
+fn parse_block(state) {
+    expect_value(state, "{");
+    let statements = [];
+    while not check_value(state, "}") and not check_type(state, "EOF") {
+        push(statements, parse_statement(state));
+    }
+    expect_value(state, "}");
+    return statements;
+}
+
+fn parse_expression(state) {
+    return parse_assignment(state);
+}
+
+fn parse_assignment(state) {
+    let left = parse_or(state);
+    if check_value(state, "=") or check_value(state, "+=") or check_value(state, "-=") or check_value(state, "*=") or check_value(state, "/=") {
+        let op = advance(state).value;
+        let value = parse_assignment(state);
+        if left.kind != "var" {
+            throw "invalid assignment target";
+        }
+        return {"kind": "assign", "name": left.name, "op": op, "value": value};
+    }
+    return left;
+}
+
+fn parse_or(state) {
+    let left = parse_and(state);
+    while match_value(state, "or") {
+        let right = parse_and(state);
+        left = {"kind": "logical", "op": "or", "left": left, "right": right};
+    }
+    return left;
+}
+
+fn parse_and(state) {
+    let left = parse_equality(state);
+    while match_value(state, "and") {
+        let right = parse_equality(state);
+        left = {"kind": "logical", "op": "and", "left": left, "right": right};
+    }
+    return left;
+}
+
+fn parse_equality(state) {
+    let left = parse_comparison(state);
+    while check_value(state, "==") or check_value(state, "!=") {
+        let op = advance(state).value;
+        let right = parse_comparison(state);
+        left = {"kind": "bin", "op": op, "left": left, "right": right};
+    }
+    return left;
+}
+
+fn parse_comparison(state) {
+    let left = parse_term(state);
+    while check_value(state, "<") or check_value(state, "<=") or check_value(state, ">") or check_value(state, ">=") {
+        let op = advance(state).value;
+        let right = parse_term(state);
+        left = {"kind": "bin", "op": op, "left": left, "right": right};
+    }
+    return left;
+}
+
+fn parse_term(state) {
+    let left = parse_factor(state);
+    while check_value(state, "+") or check_value(state, "-") {
+        let op = advance(state).value;
+        let right = parse_factor(state);
+        left = {"kind": "bin", "op": op, "left": left, "right": right};
+    }
+    return left;
+}
+
+fn parse_factor(state) {
+    let left = parse_unary(state);
+    while check_value(state, "*") or check_value(state, "/") or check_value(state, "%") {
+        let op = advance(state).value;
+        let right = parse_unary(state);
+        left = {"kind": "bin", "op": op, "left": left, "right": right};
+    }
+    return left;
+}
+
+fn parse_unary(state) {
+    if check_value(state, "not") or check_value(state, "-") {
+        let op = advance(state).value;
+        return {"kind": "un", "op": op, "operand": parse_unary(state)};
+    }
+    return parse_primary(state);
+}
+
+fn parse_primary(state) {
+    if check_type(state, "NUMBER") {
+        let token = advance(state);
+        return {"kind": "num", "value": token.value};
+    }
+    if check_type(state, "STRING") {
+        let token = advance(state);
+        return {"kind": "str", "value": token.value};
+    }
+    if check_type(state, "IDENT") {
+        let token = advance(state);
+        if token.value == "true" {
+            return {"kind": "bool", "value": true};
+        }
+        if token.value == "false" {
+            return {"kind": "bool", "value": false};
+        }
+        if token.value == "nil" {
+            return {"kind": "nil"};
+        }
+        if match_value(state, "(") {
+            let args = [];
+            if not check_value(state, ")") {
+                while true {
+                    push(args, parse_expression(state));
+                    if not match_value(state, ",") {
+                        break;
+                    }
+                }
+            }
+            expect_value(state, ")");
+            return {"kind": "call", "name": token.value, "args": args};
+        }
+        return {"kind": "var", "name": token.value};
+    }
+    if match_value(state, "(") {
+        let expr = parse_expression(state);
+        expect_value(state, ")");
+        return expr;
+    }
+    throw "unexpected token at line " + str(peek(state).line);
+}
+
+fn truthy(value) {
+    return value != nil and value != false;
+}
+
+fn lookup(env, name) {
+    let index = len(env) - 1;
+    while index >= 0 {
+        if has(env[index], name) {
+            return env[index][name];
+        }
+        index = index - 1;
+    }
+    throw "undefined variable '" + name + "'";
+}
+
+fn assign_var(env, name, value) {
+    let index = len(env) - 1;
+    while index >= 0 {
+        if has(env[index], name) {
+            env[index][name] = value;
+            return value;
+        }
+        index = index - 1;
+    }
+    throw "undefined variable '" + name + "'";
+}
+
+fn eval_bin(op, left, right) {
+    if op == "+" { return left + right; }
+    if op == "-" { return left - right; }
+    if op == "*" { return left * right; }
+    if op == "/" { return left / right; }
+    if op == "%" { return left % right; }
+    if op == "==" { return left == right; }
+    if op == "!=" { return left != right; }
+    if op == "<" { return left < right; }
+    if op == "<=" { return left <= right; }
+    if op == ">" { return left > right; }
+    if op == ">=" { return left >= right; }
+    throw "unknown operator " + op;
+}
+
+fn eval_expr(env, node) {
+    if node.kind == "num" { return node.value; }
+    if node.kind == "str" { return node.value; }
+    if node.kind == "bool" { return node.value; }
+    if node.kind == "nil" { return nil; }
+    if node.kind == "var" { return lookup(env, node.name); }
+    if node.kind == "bin" {
+        return eval_bin(node.op, eval_expr(env, node.left), eval_expr(env, node.right));
+    }
+    if node.kind == "un" {
+        let value = eval_expr(env, node.operand);
+        if node.op == "not" {
+            return not truthy(value);
+        }
+        return -value;
+    }
+    if node.kind == "logical" {
+        let left = eval_expr(env, node.left);
+        if node.op == "and" {
+            if not truthy(left) { return left; }
+            return eval_expr(env, node.right);
+        }
+        if truthy(left) { return left; }
+        return eval_expr(env, node.right);
+    }
+    if node.kind == "assign" {
+        let value = eval_expr(env, node.value);
+        if node.op != "=" {
+            let current = lookup(env, node.name);
+            value = eval_bin(slice(node.op, 0, len(node.op) - 1), current, value);
+        }
+        return assign_var(env, node.name, value);
+    }
+    if node.kind == "call" {
+        let name = node.name;
+        if name == "print" {
+            let text = "";
+            let index = 0;
+            while index < len(node.args) {
+                if index > 0 { text = text + " "; }
+                text = text + str(eval_expr(env, node.args[index]));
+                index = index + 1;
+            }
+            print(text);
+            return nil;
+        }
+        if name == "str" {
+            return str(eval_expr(env, node.args[0]));
+        }
+        if name == "num" {
+            return num(eval_expr(env, node.args[0]));
+        }
+        if name == "len" {
+            return len(eval_expr(env, node.args[0]));
+        }
+        if name == "range" {
+            if len(node.args) == 1 {
+                return range(eval_expr(env, node.args[0]));
+            }
+            if len(node.args) == 2 {
+                return range(eval_expr(env, node.args[0]), eval_expr(env, node.args[1]));
+            }
+            return range(eval_expr(env, node.args[0]), eval_expr(env, node.args[1]), eval_expr(env, node.args[2]));
+        }
+        let args = [];
+        for arg in node.args {
+            push(args, eval_expr(env, arg));
+        }
+        let function = lookup(env, name);
+        return call_user(function, args, env);
+    }
+    throw "unknown expression";
+}
+
+fn call_user(function, args, env) {
+    let call_env = [env[0], {}];
+    let index = 0;
+    while index < len(function.params) {
+        call_env[1][function.params[index]] = args[index];
+        index = index + 1;
+    }
+    try {
+        exec_block(call_env, function.body);
+    } catch error {
+        if type(error) == "map" and has(error, "signal") {
+            if error.signal == "return" {
+                return error.value;
+            }
+        }
+        throw error;
+    }
+    return nil;
+}
+
+fn exec_block(env, statements) {
+    let block_env = [];
+    let index = 0;
+    while index < len(env) {
+        push(block_env, env[index]);
+        index = index + 1;
+    }
+    push(block_env, {});
+    for statement in statements {
+        exec_statement(block_env, statement);
+    }
+}
+
+fn exec_statement(env, statement) {
+    if statement.kind == "let" {
+        let value = nil;
+        if statement.value != nil {
+            value = eval_expr(env, statement.value);
+        }
+        env[len(env) - 1][statement.name] = value;
+        return;
+    }
+    if statement.kind == "fn" {
+        env[len(env) - 1][statement.name] = statement;
+        return;
+    }
+    if statement.kind == "if" {
+        if truthy(eval_expr(env, statement.cond)) {
+            exec_block(env, statement.then);
+        } else if statement["else"] != nil {
+            if type(statement["else"]) == "list" {
+                exec_block(env, statement["else"]);
+            } else {
+                exec_statement(env, statement["else"]);
+            }
+        }
+        return;
+    }
+    if statement.kind == "while" {
+        while truthy(eval_expr(env, statement.cond)) {
+            try {
+                exec_block(env, statement.body);
+            } catch error {
+                if type(error) == "map" and has(error, "signal") {
+                    if error.signal == "break" { break; }
+                    if error.signal == "continue" { continue; }
+                }
+                throw error;
+            }
+        }
+        return;
+    }
+    if statement.kind == "for" {
+        let items = eval_expr(env, statement.iter);
+        if type(items) != "list" {
+            throw "for..in needs a list";
+        }
+        for item in items {
+            let loop_env = [];
+            let index = 0;
+            while index < len(env) {
+                push(loop_env, env[index]);
+                index = index + 1;
+            }
+            push(loop_env, {});
+            loop_env[len(loop_env) - 1][statement.name] = item;
+            try {
+                exec_block(loop_env, statement.body);
+            } catch error {
+                if type(error) == "map" and has(error, "signal") {
+                    if error.signal == "break" { break; }
+                    if error.signal == "continue" { continue; }
+                }
+                throw error;
+            }
+        }
+        return;
+    }
+    if statement.kind == "return" {
+        let value = nil;
+        if statement.value != nil {
+            value = eval_expr(env, statement.value);
+        }
+        throw {"signal": "return", "value": value};
+    }
+    if statement.kind == "break" {
+        throw {"signal": "break"};
+    }
+    if statement.kind == "continue" {
+        throw {"signal": "continue"};
+    }
+    if statement.kind == "block" {
+        exec_block(env, statement.body);
+        return;
+    }
+    if statement.kind == "expr" {
+        eval_expr(env, statement.expr);
+        return;
+    }
+    throw "unknown statement";
+}
+
+fn exec_program(env, program) {
+    for statement in program {
+        exec_statement(env, statement);
+    }
+}
+
+let args = argv();
+if len(args) == 0 {
+    print("usage: sable selfhost/sable.sable <file>");
+} else {
+    let source = read_file(args[0]);
+    let tokens = tokenize(source);
+    let state = {"tokens": tokens, "pos": 0};
+    let program = parse_program(state);
+    let env = [{}];
+    exec_program(env, program);
+}
