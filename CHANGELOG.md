@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.0 — 2026-11-16
+
+- Focused the repository on the language: removed the launch kit, research kit,
+  C backend, and language server
+- Kept the core language, playground, native VM, self-hosting, examples, and
+  tests
+
 ## 0.14.0 — 2026-11-16
 
 - File, environment, random, clock, JSON, and exit builtins

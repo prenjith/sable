@@ -13,7 +13,6 @@ authors = [{ name = "Pranav R" }]
 
 [project.scripts]
 sable = "sable:main"
-sable-lsp = "lsp:main"
 
 [tool.setuptools]
-py-modules = ["sable", "lsp"]
+py-modules = ["sable"]

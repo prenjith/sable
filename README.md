@@ -12,8 +12,7 @@
 <p align="center">
   <a href="https://pranavrenjith2-source.github.io/sable-playground/">Playground</a> ·
   <a href="https://github.com/prenjith/sable/releases">Download</a> ·
-  <a href="docs/index.html">Reference</a> ·
-  <a href="research/README.md">Research kit</a>
+  <a href="docs/index.html">Reference</a>
 </p>
 
 Sable is a tree-walking interpreter written in Python with no third-party
@@ -29,14 +28,12 @@ language fits together.
 - First-class functions, anonymous functions, and lexical closures
 - Classes with methods, `this`, and `new`
 - Concurrent tasks with `spawn`, `wait`, and `sleep`
-- Sable → C compiler for the core language (`sablec.py`)
 - Full-language native binaries built with Nuitka
 - Browser playground via Pyodide, published with GitHub Pages
 - Self-hosted core interpreter written in Sable
 - Native stack bytecode compiler and C VM for the core language
 - Practical file, JSON, environment, random, and clock builtins
 - `--test` runner for `.sable` test files
-- User research kit for Hack Club sessions
 - Lists and maps with string, number, boolean, or nil keys
 - `map.key` dot access for string keys
 - `if` / `else`, `while`, and `for ... in`
@@ -45,7 +42,6 @@ language fits together.
 - `|>` pipelines
 - A standard library for math, strings, and collections
 - REPL, file runner, token dumper, AST dumper, and type checker
-- Minimal language server (`lsp.py`) with diagnostics
 - Static verification (`--verify`) and a parser/checker fuzzer
 - Errors with line and column information
 
@@ -56,7 +52,6 @@ With Python 3.9+:
 ```
 pip install .
 sable examples/fizzbuzz.sable
-sable-lsp
 ```
 
 Or run the single file directly:
@@ -79,8 +74,8 @@ docker build -t sable .
 docker run --rm -v "$PWD:/work" -w /work sable examples/fizzbuzz.sable
 ```
 
-GitHub Actions builds standalone `sable` and `sable-lsp` binaries for Linux,
-macOS, and Windows; tagged releases attach them.
+GitHub Actions builds standalone `sable` binaries for Linux, macOS, and
+Windows; tagged releases attach them.
 
 ## Run it anywhere
 
@@ -257,24 +252,6 @@ print(wait(task));
 `sleep(ms)` pauses the current task. Threads share memory, so keep tasks
 independent or synchronize access yourself.
 
-## Native backend
-
-`sablec.py` compiles the core language to C and builds a native executable:
-
-```
-python3 sablec.py examples/fizzbuzz.sable -o fizzbuzz
-./fizzbuzz
-```
-
-Supported: numbers, strings, booleans, nil, variables, arithmetic,
-comparisons, if/else, while, `for..in range(...)`, top-level functions, and
-`print`/`str`/`num`/`len`.
-
-Not supported yet: lists, maps, classes, `match`, `try`/`catch`, imports,
-concurrency, and anonymous functions. Requires a C compiler (`cc`, `clang`, or
-`gcc`). Full-language native binaries are built with Nuitka in CI and attached
-to tagged releases.
-
 ## Native VM
 
 `native/compiler.py` compiles the core language to stack bytecode and
@@ -369,10 +346,8 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 
 ```
 sable.py                 interpreter, parser, lexer, checker, and CLI
-sablec.py                Sable to C compiler (core subset)
 selfhost/                core interpreter written in Sable
 native/                  bytecode compiler and C VM for the core
-lsp.py                   minimal language server (diagnostics)
 pyproject.toml           pip packaging and entry points
 Dockerfile               container image
 .github/workflows/       cross-platform tests and binary builds
@@ -421,22 +396,18 @@ python3 tools/fuzz_parser.py
 
 This is practical verification, not formal proof.
 
-## User research
+## Rough edges
 
-The `research/` folder has a ready-to-run kit for Hack Club sessions:
+- The native VM covers the core language only.
+- Threads have no synchronization primitives.
+- There is no package ecosystem.
+- The docs are better than the test coverage in a few corners.
 
-- `protocol.md` — a 25-minute session plan
-- `tasks.md` — task cards for different goals
-- `consent.md` — guardian consent and participant assent templates
-- `survey.md` and `observation.md`
-- `sessions_template.csv` and an analysis script
+## Why I built this
 
-```
-python3 research/analysis.py research/sample_sessions.csv
-```
-
-The sample data is synthetic. Real sessions should use anonymous IDs, follow
-the consent templates, and keep raw data local.
+I wanted a language small enough to read in one sitting, with the features I
+actually use in small scripts. It started as a parser experiment and grew from
+there. The playground exists so nobody has to install anything to try it.
 
 ## Limitations
 

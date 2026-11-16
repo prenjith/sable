@@ -36,7 +36,6 @@ jobs:
           python-version: "3.12"
       - run: pip install pyinstaller
       - run: pyinstaller --onefile --name sable-${{ runner.os }} sable.py
-      - run: pyinstaller --onefile --name sable-lsp-${{ runner.os }} lsp.py
       - uses: actions/upload-artifact@v4
         with:
           name: sable-${{ matrix.os }}
@@ -56,13 +55,11 @@ jobs:
           python-version: "3.12"
       - run: pip install nuitka
       - run: python -m nuitka --onefile --assume-yes-for-downloads --output-filename=sable-native-${{ runner.os }} sable.py
-      - run: python -m nuitka --onefile --assume-yes-for-downloads --output-filename=sable-lsp-native-${{ runner.os }} lsp.py
       - uses: actions/upload-artifact@v4
         with:
           name: sable-native-${{ matrix.os }}
           path: |
             sable-native-*
-            sable-lsp-native-*
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
