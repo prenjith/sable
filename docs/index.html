@@ -301,6 +301,12 @@ print(wait(task));</code></pre>
   <pre><code>python3 lsp.py</code></pre>
   <p>It speaks JSON-RPC over stdio and publishes parse and type diagnostics. The VS Code extension in <code>editors/vscode</code> adds syntax highlighting.</p>
 
+  <h2>Verification</h2>
+  <p><code>--verify</code> runs the type checker plus extra static checks: break/continue outside loops, return outside functions, unreachable code, duplicate map keys, and unreachable match arms.</p>
+  <pre><code>python3 sable.py --verify examples/types.sable
+python3 tools/fuzz_parser.py</code></pre>
+  <p>The test suite includes seeded property tests. This is practical verification, not formal proof.</p>
+
   <h2>How it works</h2>
   <p>Sable is a single-file tree-walking interpreter. The lexer produces tokens with line and column positions, the parser builds an AST with recursive descent, and the interpreter evaluates that AST against a chain of environments. Closures capture their defining environment; <code>return</code>, <code>break</code>, and <code>continue</code> are control-flow signals.</p>
   <p>Errors point at the source line:</p>
@@ -312,7 +318,7 @@ print(wait(task));</code></pre>
 </main>
 
 <footer>
-  Sable 0.6.0 · <a href="https://github.com/prenjith/sable">source</a>
+  Sable 0.7.0 · <a href="https://github.com/prenjith/sable">source</a>
 </footer>
 
 </body>

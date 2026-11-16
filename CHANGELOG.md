@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-11-16
+
+- `--verify` static checks for control flow, unreachable code, duplicate map
+  keys, and unreachable match arms
+- Seeded property tests
+- Parser and checker fuzzer
+- Makefile targets for test, fuzz, and verify
+
 ## 0.6.0 — 2026-11-15
 
 - Minimal language server (`lsp.py`) with parse and type diagnostics

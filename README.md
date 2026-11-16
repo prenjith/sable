@@ -35,6 +35,7 @@ language fits together.
 - A standard library for math, strings, and collections
 - REPL, file runner, token dumper, AST dumper, and type checker
 - Minimal language server (`lsp.py`) with diagnostics
+- Static verification (`--verify`) and a parser/checker fuzzer
 - Errors with line and column information
 
 ## Running
@@ -46,6 +47,7 @@ python3 sable.py            # REPL
 python3 sable.py --tokens examples/fib.sable
 python3 sable.py --ast examples/fib.sable
 python3 sable.py --check examples/types.sable
+python3 sable.py --verify examples/types.sable
 ```
 
 Sable programs use the `.sable` extension. Comments are `// line` and
@@ -256,6 +258,8 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 ```
 sable.py                 interpreter, parser, lexer, checker, and CLI
 lsp.py                   minimal language server (diagnostics)
+tools/fuzz_parser.py     parser and checker fuzzer
+Makefile                 test, fuzz, and verify shortcuts
 stdlib/                  small libraries written in Sable
 examples/                sample programs
 tests/                   unittest suite
@@ -275,12 +279,33 @@ interpreter evaluates that AST against a chain of environments. Closures
 capture their defining environment, and `return`, `break`, and `continue` are
 control-flow signals.
 
+## Verification
+
+`--verify` runs the type checker plus extra static checks:
+
+```
+python3 sable.py --verify examples/types.sable
+```
+
+It reports break/continue outside loops, return outside functions, unreachable
+code, duplicate map keys, and unreachable match arms. The test suite also
+includes seeded property tests, and `tools/fuzz_parser.py` fuzzes the lexer,
+parser, and checker:
+
+```
+python3 -m unittest discover -s tests
+python3 tools/fuzz_parser.py
+```
+
+This is practical verification, not formal proof.
+
 ## Limitations
 
 - No inheritance or interfaces.
 - Threads share memory; there is no locking or async/await.
 - No bytecode compiler yet; the evaluator is a tree-walker.
-- No formal verification.
+- Formal verification is not included; `--verify`, property tests, and the
+  fuzzer are practical checks.
 - No garbage collector concerns (it is Python under the hood).
 - `and` / `or` return operand values, not strict booleans.
 
