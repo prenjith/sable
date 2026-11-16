@@ -331,6 +331,9 @@ editors/vscode/          syntax highlighting extension
 python3 -m unittest discover -s tests -v
 ```
 
+The design simulation is in `tools/simulate_bots.py`; its results are written
+up in `docs/simulation.md`.
+
 The interpreter is a single file. The lexer produces tokens with line and
 column positions, the parser builds an AST with recursive descent, and the
 interpreter evaluates that AST against a chain of environments. Closures
