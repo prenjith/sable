@@ -6,11 +6,14 @@
 
 <p align="center">
   A small scripting language with closures, pattern matching, error handling,
-  and a pipeline operator.
+  and a pipeline operator. Learn it in an afternoon and ship a real script.
 </p>
 
 <p align="center">
-  <a href="docs/index.html">Language reference</a>
+  <a href="https://pranavrenjith2-source.github.io/sable-playground/">Playground</a> ·
+  <a href="https://github.com/prenjith/sable/releases">Download</a> ·
+  <a href="docs/index.html">Reference</a> ·
+  <a href="research/README.md">Research kit</a>
 </p>
 
 Sable is a tree-walking interpreter written in Python with no third-party
