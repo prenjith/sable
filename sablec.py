@@ -550,7 +550,10 @@ def main(argv=None):
         if shutil.which(cc) is None:
             print(f"sablec: C compiler '{cc}' not found", file=sys.stderr)
             return 1
-        result = subprocess.run([cc, "-O2", "-o", output, handle.name])
+        command = [cc, "-O2", "-o", output, handle.name]
+        if os.name != "nt":
+            command.append("-lm")
+        result = subprocess.run(command)
         if result.returncode != 0:
             return result.returncode
     finally:
