@@ -8,3 +8,6 @@ fuzz:
 
 verify:
 	python3 sable.py --verify examples/types.sable
+
+playground:
+	python3 tools/build_playground.py

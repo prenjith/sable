@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sable Playground</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #161d24;
+    --text: #d7e0e8;
+    --muted: #8b9aa8;
+    --accent: #7ee787;
+    --border: #26313b;
+    --code: #0b1015;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  header {
+    padding: 28px 20px 18px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    background: radial-gradient(circle at 50% 0%, #17301f 0%, var(--bg) 65%);
+  }
+  header h1 { margin: 0; color: var(--accent); font-size: 38px; letter-spacing: -1px; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 18px; }
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  button, select {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover, select:hover { border-color: var(--accent); }
+  #run { background: var(--accent); color: #07120a; border-color: var(--accent); font-weight: 600; }
+  #status { margin-left: auto; color: var(--muted); font-size: 13px; }
+  .panes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  textarea, pre {
+    width: 100%;
+    min-height: 360px;
+    margin: 0;
+    padding: 14px;
+    background: var(--code);
+    color: #c9d7e3;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+    resize: vertical;
+  }
+  pre { overflow: auto; white-space: pre-wrap; }
+  textarea:focus { outline: 1px solid var(--accent); }
+  @media (max-width: 800px) {
+    .panes { grid-template-columns: 1fr; }
+    textarea, pre { min-height: 240px; }
+    header h1 { font-size: 30px; }
+  }
+  a { color: var(--accent); }
+  .note { margin-top: 14px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Sable <span>playground</span></h1>
+  <p>Runs in your browser via Pyodide. No install, works on phones and tablets.</p>
+</header>
+
+<main>
+  <div class="toolbar">
+    <select id="examples">
+      <option value="fizzbuzz">fizzbuzz</option>
+      <option value="fib">fibonacci</option>
+      <option value="classes">classes</option>
+      <option value="pipeline">pipelines</option>
+      <option value="match">match</option>
+      <option value="errors">errors</option>
+    </select>
+    <button id="run">Run</button>
+    <button id="clear">Clear output</button>
+    <span id="status">loading Pyodide…</span>
+  </div>
+
+  <div class="panes">
+    <textarea id="code" spellcheck="false"></textarea>
+    <pre id="output"></pre>
+  </div>
+
+  <p class="note">
+    Threads are not available in the browser build. The full language runs in
+    the native binaries and the Python package.
+  </p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.28.0/full/pyodide.js"></script>
+<script>
+const SABLE_SOURCE = __SABLE_SOURCE__;
+
+const examples = {
+  fizzbuzz: `for i in range(1, 31) {
+    if i % 15 == 0 { print("FizzBuzz"); }
+    else if i % 3 == 0 { print("Fizz"); }
+    else if i % 5 == 0 { print("Buzz"); }
+    else { print(i); }
+}`,
+  fib: `fn fib(n) {
+    if n < 2 { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+for i in range(12) {
+    print("fib(" + str(i) + ") = " + str(fib(i)));
+}`,
+  classes: `class Point {
+    fn init(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    fn length() {
+        return sqrt(this.x * this.x + this.y * this.y);
+    }
+}
+
+let p = new Point(3, 4);
+print(p.x);
+print(p.length());`,
+  pipeline: `let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+fn square(n) { return n * n; }
+fn is_even(n) { return n % 2 == 0; }
+
+let result = nums
+    |> filter(is_even)
+    |> map(square);
+
+print(result);
+print(sum(result));`,
+  match: `fn describe(n) {
+    match n {
+        1 => return "one";
+        2 => return "two";
+        _ => return "many";
+    }
+}
+
+for n in [1, 2, 7] {
+    print(describe(n));
+}`,
+  errors: `fn safe_divide(a, b) {
+    try {
+        if b == 0 { throw "cannot divide by zero"; }
+        return a / b;
+    } catch err {
+        print("error: " + str(err));
+        return nil;
+    }
+}
+
+print(safe_divide(10, 2));
+print(safe_divide(10, 0));`
+};
+
+let pyodide = null;
+
+function status(text) {
+  document.getElementById("status").textContent = text;
+}
+
+async function boot() {
+  try {
+    pyodide = await loadPyodide();
+    pyodide.FS.writeFile("sable.py", SABLE_SOURCE);
+    status("ready");
+  } catch (error) {
+    status("failed to load Pyodide");
+    document.getElementById("output").textContent = String(error);
+  }
+}
+
+async function run() {
+  if (!pyodide) return;
+  const code = document.getElementById("code").value;
+  const output = document.getElementById("output");
+  output.textContent = "";
+  status("running…");
+  try {
+    pyodide.globals.set("user_code", code);
+    const result = await pyodide.runPythonAsync(`
+import io, json
+from contextlib import redirect_stdout, redirect_stderr
+import sable
+out = io.StringIO()
+err = io.StringIO()
+try:
+    with redirect_stdout(out), redirect_stderr(err):
+        sable.run_source(user_code)
+except sable.SableError as exc:
+    err.write(sable.format_error(exc, user_code))
+json.dumps({"stdout": out.getvalue(), "stderr": err.getvalue()})
+`);
+    const data = JSON.parse(result);
+    output.textContent = data.stdout + data.stderr;
+    status("done");
+  } catch (error) {
+    output.textContent = String(error);
+    status("error");
+  }
+}
+
+document.getElementById("run").onclick = run;
+document.getElementById("clear").onclick = function () {
+  document.getElementById("output").textContent = "";
+};
+document.getElementById("examples").onchange = function (event) {
+  document.getElementById("code").value = examples[event.target.value];
+};
+
+document.getElementById("code").value = examples.fizzbuzz;
+boot();
+</script>
+
+</body>
+</html>
