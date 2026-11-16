@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0 — 2026-11-16
+
+- User research kit for Hack Club sessions: protocol, task cards, consent and
+  assent templates, survey, observation rubric, CSV template, and analysis
+- Synthetic sample session data and report generation
+
 ## 0.10.0 — 2026-11-16
 
 - Browser playground via Pyodide, published with GitHub Pages

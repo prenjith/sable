@@ -308,6 +308,11 @@ print(wait(task));</code></pre>
 ./fizzbuzz</code></pre>
   <p>It supports numbers, strings, booleans, nil, variables, arithmetic, comparisons, if/else, while, <code>for..in range(...)</code>, top-level functions, and <code>print</code>/<code>str</code>/<code>num</code>/<code>len</code>. Lists, maps, classes, match, errors, imports, and concurrency are not in the native backend yet. Full-language native binaries are built with Nuitka in CI.</p>
 
+  <h2>User research</h2>
+  <p>The repository includes a research kit for short Hack Club sessions: consent and assent templates, task cards, a survey, an observation rubric, and an analysis script.</p>
+  <pre><code>python3 research/analysis.py research/sample_sessions.csv</code></pre>
+  <p>The sample data is synthetic. Real sessions should use anonymous IDs and follow the consent templates.</p>
+
   <h2>Verification</h2>
   <p><code>--verify</code> runs the type checker plus extra static checks: break/continue outside loops, return outside functions, unreachable code, duplicate map keys, and unreachable match arms.</p>
   <pre><code>python3 sable.py --verify examples/types.sable
@@ -325,7 +330,7 @@ python3 tools/fuzz_parser.py</code></pre>
 </main>
 
 <footer>
-  Sable 0.10.0 · <a href="https://github.com/prenjith/sable">source</a>
+  Sable 0.11.0 · <a href="https://github.com/prenjith/sable">source</a>
 </footer>
 
 </body>

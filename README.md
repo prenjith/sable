@@ -29,6 +29,7 @@ language fits together.
 - Sable → C compiler for the core language (`sablec.py`)
 - Full-language native binaries built with Nuitka
 - Browser playground via Pyodide, published with GitHub Pages
+- User research kit for Hack Club sessions
 - Lists and maps with string, number, boolean, or nil keys
 - `map.key` dot access for string keys
 - `if` / `else`, `while`, and `for ... in`
@@ -359,6 +360,23 @@ python3 tools/fuzz_parser.py
 ```
 
 This is practical verification, not formal proof.
+
+## User research
+
+The `research/` folder has a ready-to-run kit for Hack Club sessions:
+
+- `protocol.md` — a 25-minute session plan
+- `tasks.md` — task cards for different goals
+- `consent.md` — guardian consent and participant assent templates
+- `survey.md` and `observation.md`
+- `sessions_template.csv` and an analysis script
+
+```
+python3 research/analysis.py research/sample_sessions.csv
+```
+
+The sample data is synthetic. Real sessions should use anonymous IDs, follow
+the consent templates, and keep raw data local.
 
 ## Limitations
 
