@@ -30,6 +30,7 @@ language fits together.
 - Full-language native binaries built with Nuitka
 - Browser playground via Pyodide, published with GitHub Pages
 - Self-hosted core interpreter written in Sable
+- Native stack bytecode compiler and C VM for the core language
 - User research kit for Hack Club sessions
 - Lists and maps with string, number, boolean, or nil keys
 - `map.key` dot access for string keys
@@ -268,6 +269,21 @@ concurrency, and anonymous functions. Requires a C compiler (`cc`, `clang`, or
 `gcc`). Full-language native binaries are built with Nuitka in CI and attached
 to tagged releases.
 
+## Native VM
+
+`native/compiler.py` compiles the core language to stack bytecode and
+`native/vm.c` runs it with no Python runtime:
+
+```
+python3 native/compiler.py examples/fizzbuzz.sable -o /tmp/fizzbuzz.sasm
+cc -O2 -o native/sable-vm native/vm.c -lm
+./native/sable-vm /tmp/fizzbuzz.sasm
+```
+
+It supports numbers, strings, booleans, nil, variables, arithmetic,
+comparisons, if/else, while, and print. Functions, lists, maps, classes,
+errors, modules, and threads are the next milestones in `native/PLAN.md`.
+
 ## Self-hosting
 
 `selfhost/sable.sable` is a core Sable interpreter written in Sable. Run it
@@ -328,6 +344,7 @@ Assignment is `=`, with `+=`, `-=`, `*=`, and `/=` as shortcuts.
 sable.py                 interpreter, parser, lexer, checker, and CLI
 sablec.py                Sable to C compiler (core subset)
 selfhost/                core interpreter written in Sable
+native/                  bytecode compiler and C VM for the core
 lsp.py                   minimal language server (diagnostics)
 pyproject.toml           pip packaging and entry points
 Dockerfile               container image

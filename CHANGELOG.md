@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0 — 2026-11-16
+
+- Native stack bytecode compiler (`native/compiler.py`)
+- Native C VM (`native/vm.c`) for the core language
+- Native VM tests and `make native` target
+
 ## 0.12.0 — 2026-11-16
 
 - Self-hosted core interpreter written in Sable (`selfhost/sable.sable`)

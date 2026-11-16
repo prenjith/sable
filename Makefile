@@ -11,3 +11,8 @@ verify:
 
 playground:
 	python3 tools/build_playground.py
+
+CC ?= cc
+
+native:
+	$(CC) -O2 -o native/sable-vm native/vm.c -lm
