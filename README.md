@@ -28,6 +28,7 @@ language fits together.
 - Concurrent tasks with `spawn`, `wait`, and `sleep`
 - Sable → C compiler for the core language (`sablec.py`)
 - Full-language native binaries built with Nuitka
+- Browser playground via Pyodide, published with GitHub Pages
 - Lists and maps with string, number, boolean, or nil keys
 - `map.key` dot access for string keys
 - `if` / `else`, `while`, and `for ... in`
@@ -71,6 +72,19 @@ docker run --rm -v "$PWD:/work" -w /work sable examples/fizzbuzz.sable
 
 GitHub Actions builds standalone `sable` and `sable-lsp` binaries for Linux,
 macOS, and Windows; tagged releases attach them.
+
+## Run it anywhere
+
+- Browser: https://prenjith.github.io/sable/playground.html (Pyodide; works on
+  phones and tablets)
+- Linux, macOS, Windows: standalone binaries on the
+  [releases page](https://github.com/prenjith/sable/releases)
+- Android (Termux): `pkg install python`, then
+  `pip install git+https://github.com/prenjith/sable.git`
+- iOS: run `sable.py` in Pythonista or a-Shell
+- Docker: see the Dockerfile above
+
+Threads are not available in the browser build.
 
 Sable programs use the `.sable` extension. Comments are `// line` and
 `/* block */`.

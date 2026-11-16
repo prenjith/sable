@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.0 — 2026-11-16
+
+- Browser playground via Pyodide, published with GitHub Pages
+- Browser and mobile instructions
+
 ## 0.9.0 — 2026-11-16
 
 - Sable → C compiler (`sablec.py`) for the core language
