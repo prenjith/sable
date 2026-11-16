@@ -1,0 +1,11 @@
+let a = spawn(fn() {
+    sleep(10);
+    return "first";
+});
+
+let b = spawn(fn() {
+    return "second";
+});
+
+print(wait(a));
+print(wait(b));

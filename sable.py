@@ -6,10 +6,12 @@ import os
 import math
 import bisect
 import functools
+import threading
+import time
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 sys.setrecursionlimit(10000)
 
@@ -897,6 +899,15 @@ class SableObject:
         return f"<{self.klass.name} object>"
 
 
+class Task:
+    def __init__(self, thread, box):
+        self.thread = thread
+        self.box = box
+
+    def __repr__(self):
+        return "<task>"
+
+
 class BoundMethod:
     def __init__(self, function, receiver):
         self.function = function
@@ -995,7 +1006,7 @@ def to_display(value):
     if isinstance(value, SableMap):
         parts = [repr_value(k) + ": " + repr_value(v) for k, v in value.items()]
         return "{" + ", ".join(parts) + "}"
-    if isinstance(value, (Function, Builtin, SableClass, SableObject, BoundMethod)):
+    if isinstance(value, (Function, Builtin, SableClass, SableObject, BoundMethod, Task)):
         return repr(value)
     return str(value)
 
@@ -1372,7 +1383,7 @@ class Interpreter:
         self.globals = Environment()
         self.base_dir = base_dir
         self.loaded_modules = set()
-        self.depth = 0
+        self.local = threading.local()
         self.install_builtins()
 
     def run(self, program):
@@ -1649,9 +1660,10 @@ class Interpreter:
             raise SableRuntimeError(
                 f"{name}() expects {len(function.params)} argument(s), got {len(args)}",
                 line)
-        self.depth += 1
-        if self.depth > 1000:
-            self.depth -= 1
+        depth = getattr(self.local, "depth", 0) + 1
+        self.local.depth = depth
+        if depth > 1000:
+            self.local.depth = depth - 1
             raise SableRuntimeError("stack overflow", line)
         call_env = Environment(function.closure)
         if receiver is not None:
@@ -1667,7 +1679,7 @@ class Interpreter:
         except ContinueSignal as signal:
             raise SableRuntimeError("'continue' outside a loop", signal.line)
         finally:
-            self.depth -= 1
+            self.local.depth = depth - 1
         return None
 
     def iterable_items(self, value, line):
@@ -1772,6 +1784,9 @@ class Interpreter:
         register("trim", self.builtin_trim, 1, 1)
         register("starts_with", self.builtin_starts_with, 2, 2)
         register("ends_with", self.builtin_ends_with, 2, 2)
+        register("spawn", self.builtin_spawn, 1, None)
+        register("wait", self.builtin_wait, 1, 1)
+        register("sleep", self.builtin_sleep, 1, 1)
 
     def builtin_print(self, args, line):
         print(" ".join(to_display(value) for value in args))
@@ -1821,6 +1836,8 @@ class Interpreter:
             return "class"
         if isinstance(value, SableObject):
             return "object"
+        if isinstance(value, Task):
+            return "task"
         return "unknown"
 
     def builtin_range(self, args, line):
@@ -2039,6 +2056,38 @@ class Interpreter:
         if not (isinstance(text, str) and isinstance(suffix, str)):
             raise SableRuntimeError("ends_with() expects two strings", line)
         return text.endswith(suffix)
+
+    def builtin_spawn(self, args, line):
+        function = args[0]
+        call_args = args[1:]
+        if not isinstance(function, (Function, Builtin, BoundMethod)):
+            raise SableRuntimeError("spawn() expects a function", line)
+        box = {}
+
+        def run():
+            try:
+                box["value"] = self.call_value(function, call_args, line)
+            except BaseException as error:
+                box["error"] = error
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        return Task(thread, box)
+
+    def builtin_wait(self, args, line):
+        task = args[0]
+        if not isinstance(task, Task):
+            raise SableRuntimeError("wait() expects a task", line)
+        task.thread.join()
+        if "error" in task.box:
+            raise task.box["error"]
+        return task.box.get("value")
+
+    def builtin_sleep(self, args, line):
+        if not is_number(args[0]):
+            raise SableRuntimeError("sleep() expects milliseconds", line)
+        time.sleep(max(0.0, args[0] / 1000.0))
+        return None
 
     def builtin_upper(self, args, line):
         if not isinstance(args[0], str):

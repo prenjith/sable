@@ -230,6 +230,29 @@ class TestAdvanced(unittest.TestCase):
         self.assertEqual(out, "[1, 2, 3]\n[3, 2, 1]\n")
 
 
+class TestConcurrency(unittest.TestCase):
+    def test_spawn_wait(self):
+        out, err = run("let t = spawn(fn() { return 21 * 2; }); print(wait(t));")
+        self.assertIsNone(err)
+        self.assertEqual(out, "42\n")
+
+    def test_spawn_args(self):
+        out, err = run("fn add(a, b) { return a + b; } let t = spawn(add, 2, 3); print(wait(t));")
+        self.assertIsNone(err)
+        self.assertEqual(out, "5\n")
+
+    def test_spawn_error(self):
+        source = 'let t = spawn(fn() { throw "boom"; }); try { wait(t); } catch e { print("caught: " + str(e)); }'
+        out, err = run(source)
+        self.assertIsNone(err)
+        self.assertEqual(out, "caught: boom\n")
+
+    def test_string_join_still_works(self):
+        out, err = run('print(join(["a", "b"], "-"));')
+        self.assertIsNone(err)
+        self.assertEqual(out, "a-b\n")
+
+
 class TestClasses(unittest.TestCase):
     def test_class(self):
         source = 'class Point { fn init(x, y) { this.x = x; this.y = y; } fn length() { return sqrt(this.x * this.x + this.y * this.y); } } let p = new Point(3, 4); print(p.x); print(p.length()); p.x = 6; print(p.x); print(type(p));'
