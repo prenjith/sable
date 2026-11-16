@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 sys.setrecursionlimit(10000)
 
@@ -1378,6 +1378,190 @@ class Checker:
         return "any"
 
 
+class Verifier:
+    def __init__(self):
+        self.errors = []
+        self.warnings = []
+        self.loop_depth = 0
+        self.function_depth = 0
+
+    def verify(self, program):
+        for stmt in program.statements:
+            self.check_stmt(stmt)
+        return self.errors, self.warnings
+
+    def error(self, line, message):
+        self.errors.append((line, message))
+
+    def warning(self, line, message):
+        self.warnings.append((line, message))
+
+    def check_stmt(self, stmt):
+        getattr(self, "check_" + type(stmt).__name__)(stmt)
+
+    def check_Block(self, stmt):
+        terminated = False
+        for child in stmt.statements:
+            if terminated:
+                self.warning(child.line, "unreachable code")
+            self.check_stmt(child)
+            if isinstance(child, (Return, Break, Continue, Throw)):
+                terminated = True
+
+    def check_Let(self, stmt):
+        if stmt.value is not None:
+            self.check_expr(stmt.value)
+
+    def check_Const(self, stmt):
+        self.check_expr(stmt.value)
+
+    def check_If(self, stmt):
+        self.check_expr(stmt.cond)
+        self.check_stmt(stmt.then_branch)
+        if stmt.else_branch is not None:
+            self.check_stmt(stmt.else_branch)
+
+    def check_While(self, stmt):
+        self.check_expr(stmt.cond)
+        self.loop_depth += 1
+        self.check_stmt(stmt.body)
+        self.loop_depth -= 1
+
+    def check_For(self, stmt):
+        self.check_expr(stmt.iterable)
+        self.loop_depth += 1
+        self.check_stmt(stmt.body)
+        self.loop_depth -= 1
+
+    def check_Return(self, stmt):
+        if self.function_depth == 0:
+            self.error(stmt.line, "'return' outside a function")
+        if stmt.value is not None:
+            self.check_expr(stmt.value)
+
+    def check_Break(self, stmt):
+        if self.loop_depth == 0:
+            self.error(stmt.line, "'break' outside a loop")
+
+    def check_Continue(self, stmt):
+        if self.loop_depth == 0:
+            self.error(stmt.line, "'continue' outside a loop")
+
+    def check_Throw(self, stmt):
+        self.check_expr(stmt.value)
+
+    def check_TryCatch(self, stmt):
+        self.check_stmt(stmt.try_block)
+        self.check_stmt(stmt.catch_block)
+
+    def check_Match(self, stmt):
+        self.check_expr(stmt.value)
+        catch_all = False
+        for pattern, body in stmt.arms:
+            if catch_all:
+                self.warning(body.line, "unreachable match arm")
+            if pattern[0] in ("wild", "bind"):
+                catch_all = True
+            self.check_stmt(body)
+
+    def check_FnDecl(self, stmt):
+        saved_loops = self.loop_depth
+        self.loop_depth = 0
+        self.function_depth += 1
+        self.check_stmt(stmt.body)
+        self.function_depth -= 1
+        self.loop_depth = saved_loops
+
+    def check_ClassDecl(self, stmt):
+        for method in stmt.methods:
+            saved_loops = self.loop_depth
+            self.loop_depth = 0
+            self.function_depth += 1
+            self.check_stmt(method.body)
+            self.function_depth -= 1
+            self.loop_depth = saved_loops
+
+    def check_ExprStmt(self, stmt):
+        self.check_expr(stmt.expr)
+
+    def check_Import(self, stmt):
+        pass
+
+    def check_expr(self, expr):
+        getattr(self, "expr_" + type(expr).__name__)(expr)
+
+    def expr_Literal(self, expr):
+        pass
+
+    def expr_Var(self, expr):
+        pass
+
+    def expr_ListLit(self, expr):
+        for element in expr.elements:
+            self.check_expr(element)
+
+    def expr_MapLit(self, expr):
+        seen = set()
+        for key, value in expr.pairs:
+            marker = None
+            if key.value is None:
+                marker = ("nil",)
+            elif isinstance(key.value, bool):
+                marker = ("bool", key.value)
+            elif isinstance(key.value, float):
+                marker = ("num", key.value)
+            elif isinstance(key.value, str):
+                marker = ("str", key.value)
+            if marker is not None:
+                if marker in seen:
+                    self.warning(key.line, "duplicate map key")
+                seen.add(marker)
+            self.check_expr(key)
+            self.check_expr(value)
+
+    def expr_FnExpr(self, expr):
+        saved_loops = self.loop_depth
+        self.loop_depth = 0
+        self.function_depth += 1
+        self.check_stmt(expr.body)
+        self.function_depth -= 1
+        self.loop_depth = saved_loops
+
+    def expr_Unary(self, expr):
+        self.check_expr(expr.operand)
+
+    def expr_Binary(self, expr):
+        self.check_expr(expr.left)
+        self.check_expr(expr.right)
+
+    def expr_Logical(self, expr):
+        self.check_expr(expr.left)
+        self.check_expr(expr.right)
+
+    def expr_Assign(self, expr):
+        if isinstance(expr.target, Index):
+            self.check_expr(expr.target.obj)
+            self.check_expr(expr.target.index)
+        self.check_expr(expr.value)
+
+    def expr_Call(self, expr):
+        self.check_expr(expr.callee)
+        for argument in expr.args:
+            self.check_expr(argument)
+
+    def expr_Index(self, expr):
+        self.check_expr(expr.obj)
+        self.check_expr(expr.index)
+
+    def expr_Pipe(self, expr):
+        self.check_expr(expr.left)
+        self.check_expr(expr.right)
+
+    def expr_New(self, expr):
+        for argument in expr.args:
+            self.check_expr(argument)
+
+
 class Interpreter:
     def __init__(self, base_dir="."):
         self.globals = Environment()
@@ -2234,6 +2418,7 @@ def main(argv=None):
         print("  sable --tokens f   print the token stream")
         print("  sable --ast f      print the parsed AST")
         print("  sable --check f    check type annotations")
+        print("  sable --verify f   run static verification checks")
         print("  sable -v           print the version")
         return 0
     if arg == "--check":
@@ -2249,6 +2434,30 @@ def main(argv=None):
             Checker().check(parse(source))
         except SableError as error:
             print(format_error(error, source), file=sys.stderr)
+            return 1
+        print("ok")
+        return 0
+    if arg == "--verify":
+        if len(argv) < 3:
+            print("--verify needs a file", file=sys.stderr)
+            return 1
+        try:
+            source = read_source(argv[2])
+        except OSError as error:
+            print(f"sable: {error}", file=sys.stderr)
+            return 1
+        try:
+            program = parse(source)
+            Checker().check(program)
+        except SableError as error:
+            print(format_error(error, source), file=sys.stderr)
+            return 1
+        errors, warnings = Verifier().verify(program)
+        for line, message in warnings:
+            print(f"{argv[2]}:{line}: warning: {message}")
+        for line, message in errors:
+            print(f"{argv[2]}:{line}: error: {message}", file=sys.stderr)
+        if errors:
             return 1
         print("ok")
         return 0

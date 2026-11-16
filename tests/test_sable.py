@@ -230,6 +230,38 @@ class TestAdvanced(unittest.TestCase):
         self.assertEqual(out, "[1, 2, 3]\n[3, 2, 1]\n")
 
 
+class TestVerifier(unittest.TestCase):
+    def verify(self, source):
+        program = sable.parse(source)
+        sable.Checker().check(program)
+        return sable.Verifier().verify(program)
+
+    def test_break_outside_loop(self):
+        errors, warnings = self.verify("break;")
+        self.assertTrue(errors)
+
+    def test_return_outside_function(self):
+        errors, warnings = self.verify("return 1;")
+        self.assertTrue(errors)
+
+    def test_unreachable_code(self):
+        errors, warnings = self.verify('fn f() { return 1; print("dead"); }')
+        self.assertTrue(any("unreachable" in message for line, message in warnings))
+
+    def test_duplicate_map_key(self):
+        errors, warnings = self.verify('let m = {"a": 1, "a": 2};')
+        self.assertTrue(any("duplicate" in message for line, message in warnings))
+
+    def test_unreachable_match_arm(self):
+        errors, warnings = self.verify('match 1 { _ => print("a"); 2 => print("b"); }')
+        self.assertTrue(any("unreachable" in message for line, message in warnings))
+
+    def test_clean_program(self):
+        errors, warnings = self.verify('fn f(x: number): number { return x + 1; } print(f(1));')
+        self.assertFalse(errors)
+        self.assertFalse(warnings)
+
+
 class TestConcurrency(unittest.TestCase):
     def test_spawn_wait(self):
         out, err = run("let t = spawn(fn() { return 21 * 2; }); print(wait(t));")
